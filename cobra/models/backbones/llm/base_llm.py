@@ -70,14 +70,19 @@ class LLMBackbone(nn.Module, ABC):
 
     @abstractmethod
     def embed_input_ids(self, input_ids: torch.LongTensor) -> torch.Tensor: 
-        if hasattr(self.llm, 'device'):
-            input_ids = input_ids.to(self.llm.device)
-        else:
-            # 获取模型参数的设备
-            model_device = next(self.llm.parameters()).device
-            input_ids = input_ids.to(model_device)
-    
-        return self.llm.get_input_embeddings()(input_ids)
+        """Embed input IDs with proper device handling"""
+        # 獲取模型的設備
+        model_device = next(self.llm.parameters()).device
+        
+        # 確保 input_ids 在正確的設備上
+        input_ids = input_ids.to(model_device)
+        
+        # 獲取嵌入層並確保在正確設備上
+        embedding_layer = self.llm.get_input_embeddings()
+        if not isinstance(embedding_layer, type(None)):
+            embedding_layer = embedding_layer.to(model_device)
+        
+        return embedding_layer(input_ids)
     @property
     @abstractmethod
     def prompt_builder_fn(self) -> Type[PromptBuilder]: ...

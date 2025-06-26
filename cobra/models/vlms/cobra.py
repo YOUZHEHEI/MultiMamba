@@ -420,20 +420,21 @@ class CobraVLM(VLM):
             fused_labels = torch.vstack([multimodal_labels, unimodal_labels])
 
         # Run LLM Forward --> returns CausalLMOutputWithPast!
-        return self.llm_backbone(
-            input_ids=None,
-            attention_mask=None,
-            position_ids=None,
-            past_key_values=past_key_values,
-            inputs_embeds=fused_embeddings,
-            labels=fused_labels,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-            inference_params=inference_params,
-            num_last_tokens=num_last_tokens,
-        )
+        with torch.autocast("cuda", enabled=False):
+            return self.llm_backbone(
+                input_ids=None,
+                attention_mask=None,
+                position_ids=None,
+                past_key_values=past_key_values,
+                inputs_embeds=fused_embeddings,
+                labels=fused_labels,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                inference_params=inference_params,
+                num_last_tokens=num_last_tokens,
+            )
 
     # === GenerationMixin Methods ===
     #   => Note: The following methods override the functionality of `transformers.GenerationMixin`; these expect the

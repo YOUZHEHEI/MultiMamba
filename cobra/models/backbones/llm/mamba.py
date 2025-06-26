@@ -76,21 +76,22 @@ class MambaLLMBackbone(HFCausalLLMBackbone):
         inference_params=None,
         num_last_tokens:int = 0
     ) -> CausalLMOutputWithPast:
-        output: CausalLMOutputWithPast = self.llm(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            position_ids=position_ids,
-            past_key_values=past_key_values,
-            inputs_embeds=inputs_embeds,
-            labels=labels,
-            use_cache=use_cache,
-            output_attentions=output_attentions,
-            output_hidden_states=output_hidden_states,
-            return_dict=return_dict,
-            inference_params=inference_params,
-            num_last_tokens=num_last_tokens
-        )
-        return output
+        with torch.autocast("cuda", enabled=False):
+            output: CausalLMOutputWithPast = self.llm(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
+                labels=labels,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                inference_params=inference_params,
+                num_last_tokens=num_last_tokens
+            )
+            return output
     
     @property
     def prompt_builder_fn(self) -> Type[PromptBuilder]:

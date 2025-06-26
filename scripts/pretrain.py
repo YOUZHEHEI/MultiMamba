@@ -1,5 +1,5 @@
 """
-Final fixed pretrain.py with proper single GPU environment setup
+Memory-optimized pretrain.py with dataset subset support
 """
 import json
 import os
@@ -19,14 +19,15 @@ from cobra.preprocessing import get_dataset_and_collator
 from cobra.training import Metrics, get_train_strategy
 from cobra.util import set_global_seed
 
-# Disable Tokenizers Parallelism to Play Nice w/ PyTorch Multiprocessing DataLoaders
+# Memory optimization settings
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:64'
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:32'  # 降低分配大小
 torch.cuda.empty_cache()
 
-# 设置显存预分配比例（为系统保留一些显存）
-torch.cuda.set_per_process_memory_fraction(0.92)  # 使用92%的显存，保留2GB给系统
-# Ensure proper environment setup for single GPU
+# 設置更保守的顯存使用
+torch.cuda.set_per_process_memory_fraction(0.85)  # 降低到85%
+
+# 確保單GPU環境設定
 if "WORLD_SIZE" not in os.environ:
     os.environ["WORLD_SIZE"] = "1"
 if "RANK" not in os.environ:
@@ -34,7 +35,7 @@ if "RANK" not in os.environ:
 if "LOCAL_RANK" not in os.environ:
     os.environ["LOCAL_RANK"] = "0"
 
-# Initialize Overwatch =>> Wraps `logging.Logger`
+# Initialize Overwatch
 overwatch = initialize_overwatch(__name__)
 
 
@@ -44,7 +45,7 @@ class PretrainConfig:
 
     # ModelConfig (`cobra/conf/models.py`); override with --model.type `ModelRegistry.<MODEL>.model_id`
     model: ModelConfig = field(
-        default_factory=ModelConfig.get_choice_class(ModelRegistry.COBRA_3B.model_id)  # Use original default
+        default_factory=ModelConfig.get_choice_class(ModelRegistry.COBRA_3B.model_id)
     )
 
     # DatasetConfig (`cobra/conf/datasets.py`); override with --dataset.type `DatasetRegistry.<DATASET>.dataset_id`
@@ -53,31 +54,37 @@ class PretrainConfig:
     )
 
     # Pretraining Stage in < align | finetune | lora-finetune >
-    stage: str = "finetune"                                 # Default to standard finetune
-    pretrained_checkpoint: Optional[Path] = None            # Pretrained Checkpoint to Load (for `finetune`)
+    stage: str = "finetune"
+    pretrained_checkpoint: Optional[Path] = None
 
-    # LoRA specific settings (simple types to avoid serialization issues)
-    use_lora: bool = False                                  # Enable LoRA
-    lora_target_modules_str: str = ""                       # Comma-separated string of target modules
+    # LoRA specific settings
+    use_lora: bool = False
+    lora_target_modules_str: str = ""
+
+    # 新增：資料集限制參數
+    max_samples: Optional[Union[int, float]] = None  # 支援整數或百分比 (0.0-1.0)
+    subset_seed: int = 42  # 資料集抽樣的隨機種子
 
     # Run Arguments
-    run_id: Optional[str] = None                            # Run ID for logging, Weights & Biases
-    run_root_dir: Path = Path("runs")                       # Path to directory to store logs & checkpoints
-    seed: int = 7                                           # Random seed (for reproducibility)
+    run_id: Optional[str] = None
+    run_root_dir: Path = Path("runs")
+    seed: int = 7
 
-    # HF Hub Credentials (for any gated models)
-    hf_token: Union[str, Path] = Path(".hf_token")          # Environment variable or Path to HF Token
+    # HF Hub Credentials
+    hf_token: Union[str, Path] = Path(".hf_token")
 
-    # Tracking Parameters (use simple types)
-    trackers_str: str = "jsonl,wandb"                       # Comma-separated tracker names
-    wandb_project: str = "cobra"                            # Name of W&B project
-    wandb_entity: Optional[str] = None                      # Name of W&B entity (default: None)
+    # Tracking Parameters
+    trackers_str: str = "jsonl,wandb"
+    wandb_project: str = "cobra"
+    wandb_entity: Optional[str] = None
 
-    # Single GPU optimization
-    gradient_accumulation_steps: int = 4                    # For simulating larger batch sizes
+    # Memory optimization parameters
+    gradient_accumulation_steps: int = 8  # 增加梯度累積步驟
+    num_workers: int = 0  # 單GPU使用0個worker
 
-    # Override dataloader workers for single GPU to avoid multiprocessing issues
-    num_workers: int = 0                                    # Use 0 for single GPU to avoid worker issues
+    # 新增：記憶體優化參數
+    enable_memory_optimization: bool = True  # 啟用記憶體優化
+    clear_cache_frequency: int = 10  # 每N步清理快取
 
     def __post_init__(self) -> None:
         """Set optimization parameters based on `stage` and convert string fields to proper types."""
@@ -122,8 +129,8 @@ class PretrainConfig:
             # Use LoRA finetune parameters from model config
             self.epochs = getattr(self.model, 'lora_finetune_epochs', 1)
             self.max_steps = getattr(self.model, 'lora_finetune_max_steps', None)
-            self.global_batch_size = getattr(self.model, 'lora_finetune_global_batch_size', 32)
-            self.per_device_batch_size = getattr(self.model, 'lora_finetune_per_device_batch_size', 4)
+            self.global_batch_size = getattr(self.model, 'lora_finetune_global_batch_size', 8)  # 降低
+            self.per_device_batch_size = getattr(self.model, 'lora_finetune_per_device_batch_size', 1)  # 降低
 
             self.learning_rate = getattr(self.model, 'lora_finetune_learning_rate', 1e-4)
             self.weight_decay = getattr(self.model, 'lora_finetune_weight_decay', 0.01)
@@ -131,7 +138,7 @@ class PretrainConfig:
             self.lr_scheduler_type = getattr(self.model, 'lora_finetune_lr_scheduler_type', "linear-warmup+cosine-decay")
             self.warmup_ratio = getattr(self.model, 'lora_finetune_warmup_ratio', 0.03)
 
-            self.train_strategy = getattr(self.model, 'lora_finetune_train_strategy', "fsdp-shard-grad-op")
+            self.train_strategy = getattr(self.model, 'lora_finetune_train_strategy', "single-gpu")  # 強制單GPU
 
             # Force LoRA usage for lora-finetune stage
             self.use_lora = True
@@ -139,30 +146,46 @@ class PretrainConfig:
         else:
             raise ValueError(f"Stage `{self.stage}` is not supported!")
 
-        # Adjust batch sizes for single GPU if needed
+        # Memory optimization for single GPU
         world_size = int(os.environ.get("WORLD_SIZE", "1"))
         if world_size == 1:
-            overwatch.info(f"Detected single GPU setup, optimizing configuration")
+            overwatch.info(f"Detected single GPU setup, applying memory optimizations")
             
-            # For single GPU, reduce memory pressure
-            if self.stage == "finetune" and not self.use_lora:
-                # Full finetuning needs smaller batches
+            # 根據階段調整參數
+            if self.stage == "lora-finetune":
+                # LoRA 訓練記憶體需求較低
                 self.per_device_batch_size = min(self.per_device_batch_size, 1)
                 self.gradient_accumulation_steps = max(8, self.gradient_accumulation_steps)
-            elif self.stage == "lora-finetune" or self.use_lora:
-                # LoRA can handle larger batches
-                self.per_device_batch_size = min(self.per_device_batch_size, 8)
-                self.gradient_accumulation_steps = max(4, self.gradient_accumulation_steps)
-            else:  # align
-                self.per_device_batch_size = min(self.per_device_batch_size, 4)
-                self.gradient_accumulation_steps = max(4, self.gradient_accumulation_steps)
+            else:
+                # 全量微調記憶體需求很高
+                self.per_device_batch_size = 1
+                self.gradient_accumulation_steps = max(16, self.gradient_accumulation_steps)
+            
+            # 強制使用單GPU策略
+            self.train_strategy = "single-gpu"
+
+        # 如果指定了 max_samples，給出提示
+        if self.max_samples is not None:
+            if isinstance(self.max_samples, float):
+                overwatch.info(f"Dataset will be limited to {self.max_samples*100:.1f}% of samples (seed: {self.subset_seed})")
+            else:
+                overwatch.info(f"Dataset will be limited to {self.max_samples} samples (seed: {self.subset_seed})")
 
     # fmt: on
 
 
 @draccus.wrap()
 def pretrain(cfg: PretrainConfig) -> None:
-    overwatch.info("Cobra VLM Training :: Gathering Light")
+    overwatch.info("Cobra VLM Training :: Gathering Light (Memory Optimized)")
+
+    # Memory optimization setup
+    if cfg.enable_memory_optimization:
+        overwatch.info("Applying memory optimizations...")
+        torch.cuda.empty_cache()
+        
+        # 設置更保守的記憶體分配
+        if hasattr(torch.cuda, 'set_per_process_memory_fraction'):
+            torch.cuda.set_per_process_memory_fraction(0.85)
 
     # Setup device
     torch.cuda.set_device(device_id := (overwatch.rank() % torch.cuda.device_count()))
@@ -175,6 +198,10 @@ def pretrain(cfg: PretrainConfig) -> None:
         cfg.run_id = f"{model_id}+stage-{stage_suffix}+x{cfg.seed}" if cfg.run_id is None else cfg.run_id
     else:
         cfg.run_id = f"{dataset_id}+{model_id}+stage-{stage_suffix}+x{cfg.seed}" if cfg.run_id is None else cfg.run_id
+    
+    # Add subset suffix if using limited samples
+    if cfg.max_samples is not None:
+        cfg.run_id += f"+subset-{cfg.max_samples}"
 
     # Start =>> Build Directories and Set Randomness
     hf_token = cfg.hf_token.read_text().strip() if isinstance(cfg.hf_token, Path) else os.environ[cfg.hf_token]
@@ -185,7 +212,6 @@ def pretrain(cfg: PretrainConfig) -> None:
     if overwatch.is_rank_zero():
         # Create a serializable version of config for saving
         try:
-            # Save config with a simplified structure
             config_dict = {
                 "model_id": model_id,
                 "stage": cfg.stage,
@@ -193,6 +219,8 @@ def pretrain(cfg: PretrainConfig) -> None:
                 "dataset_id": dataset_id,
                 "run_id": cfg.run_id,
                 "seed": cfg.seed,
+                "max_samples": cfg.max_samples,  # 新增
+                "subset_seed": cfg.subset_seed,  # 新增
                 "learning_rate": cfg.learning_rate,
                 "global_batch_size": cfg.global_batch_size,
                 "per_device_batch_size": cfg.per_device_batch_size,
@@ -200,6 +228,7 @@ def pretrain(cfg: PretrainConfig) -> None:
                 "max_steps": cfg.max_steps,
                 "gradient_accumulation_steps": cfg.gradient_accumulation_steps,
                 "num_workers": cfg.num_workers,
+                "enable_memory_optimization": cfg.enable_memory_optimization,
             }
             
             # Add LoRA-specific config if using LoRA
@@ -213,12 +242,15 @@ def pretrain(cfg: PretrainConfig) -> None:
             with open(run_dir / "config.json", "w") as f:
                 json.dump(config_dict, f, indent=2)
                 
-            # Also save as yaml for readability
             with open(run_dir / "config.yaml", "w") as f:
                 yaml.dump(config_dict, f, default_flow_style=False)
                 
         except Exception as e:
             overwatch.warning(f"Could not save config: {e}")
+
+    # 記憶體清理
+    if cfg.enable_memory_optimization:
+        torch.cuda.empty_cache()
 
     # Load Vision Backbone
     overwatch.info(f"Loading Vision Backbone [bold]{cfg.model.vision_backbone_id}[/]")
@@ -226,16 +258,23 @@ def pretrain(cfg: PretrainConfig) -> None:
         cfg.model.vision_backbone_id, image_resize_strategy=cfg.model.image_resize_strategy
     )
 
+    # 記憶體清理
+    if cfg.enable_memory_optimization:
+        torch.cuda.empty_cache()
+
     # Load LLM Backbone
     overwatch.info(f"Loading Pretrained LLM [bold]{cfg.model.llm_backbone_id}[/] via HF Transformers")
     llm_backbone, tokenizer = get_llm_backbone_and_tokenizer(
         cfg.model.llm_backbone_id, llm_max_length=cfg.model.llm_max_length, hf_token=hf_token
     )
 
+    # 記憶體清理
+    if cfg.enable_memory_optimization:
+        torch.cuda.empty_cache()
+
     # Create VLM with optional LoRA support
     if cfg.use_lora:
         overwatch.info(f"Instantiating CobraLoRAVLM `{model_id}` for Training Stage = `{cfg.stage}`")
-        # Check if we have the LoRA VLM available
         try:
             vlm = get_vlm(
                 model_id,
@@ -272,6 +311,10 @@ def pretrain(cfg: PretrainConfig) -> None:
             use_lora=False,
         )
 
+    # 記憶體清理
+    if cfg.enable_memory_optimization:
+        torch.cuda.empty_cache()
+
     # Freeze backbones and apply LoRA if needed
     freeze_stage = cfg.stage if not cfg.use_lora else "lora-finetune"
     overwatch.info(f"Invoking `VLM.freeze_backbones()` for `{model_id}` => Training Stage: `{freeze_stage}`")
@@ -292,9 +335,16 @@ def pretrain(cfg: PretrainConfig) -> None:
     overwatch.info(f"Invoking `VLM.load_checkpoint()` for `{model_id}` => Training Stage: `{cfg.stage}`")
     vlm.load_from_checkpoint(cfg.stage, run_dir, pretrained_checkpoint=cfg.pretrained_checkpoint)
 
-    # Get Dataset for Specified Stage
+    # 記憶體清理
+    if cfg.enable_memory_optimization:
+        torch.cuda.empty_cache()
+
+    # Get Dataset for Specified Stage (with subset support)
     stage_for_dataset = "finetune" if cfg.stage == "lora-finetune" else cfg.stage
     overwatch.info(f"Creating Dataset `{cfg.dataset.dataset_id}` => Stage: `{stage_for_dataset}`")
+    if cfg.max_samples is not None:
+        overwatch.info(f"Using dataset subset: {cfg.max_samples} samples")
+    
     train_dataset, collator = get_dataset_and_collator(
         stage_for_dataset,
         cfg.dataset,
@@ -303,7 +353,13 @@ def pretrain(cfg: PretrainConfig) -> None:
         prompt_builder_fn=llm_backbone.prompt_builder_fn,
         default_image_resolution=vision_backbone.default_image_resolution,
         padding_side=tokenizer.padding_side,
+        max_samples=cfg.max_samples,  # 新增：資料集限制
+        seed=cfg.subset_seed,  # 新增：抽樣種子
     )
+
+    # 記憶體清理
+    if cfg.enable_memory_optimization:
+        torch.cuda.empty_cache()
 
     # Create Train Strategy
     overwatch.info(f"Initializing Train Strategy `{cfg.train_strategy}`")
@@ -327,6 +383,10 @@ def pretrain(cfg: PretrainConfig) -> None:
     )
     train_strategy.run_setup(run_dir=run_dir, n_train_examples=len(train_dataset))
 
+    # 記憶體清理
+    if cfg.enable_memory_optimization:
+        torch.cuda.empty_cache()
+
     # Create Metrics
     metrics_stage = cfg.stage if cfg.stage != "lora-finetune" else "lora"
     overwatch.info(f"Creating Metrics with Active Trackers => `{cfg.trackers}`")
@@ -334,7 +394,7 @@ def pretrain(cfg: PretrainConfig) -> None:
         cfg.trackers,
         cfg.run_id,
         run_dir,
-        config_dict,  # Use the simplified config dict instead of full draccus encoding
+        config_dict,
         metrics_stage,
         wandb_project=cfg.wandb_project,
         wandb_entity=cfg.wandb_entity,
@@ -344,9 +404,14 @@ def pretrain(cfg: PretrainConfig) -> None:
     # Log GPU memory info for single GPU setup
     if overwatch.world_size() == 1:
         gpu_memory = torch.cuda.get_device_properties(0).total_memory / 1024**3
+        memory_allocated = torch.cuda.memory_allocated(0) / 1024**3
+        memory_cached = torch.cuda.memory_reserved(0) / 1024**3
+        
         overwatch.info(f"GPU Memory: {gpu_memory:.1f} GB")
+        overwatch.info(f"Memory Usage: Allocated={memory_allocated:.1f}GB, Cached={memory_cached:.1f}GB")
         overwatch.info(f"Effective Batch Size: {cfg.global_batch_size} (Per-device: {cfg.per_device_batch_size}, Accumulation: {cfg.gradient_accumulation_steps})")
         overwatch.info(f"DataLoader Workers: {cfg.num_workers}")
+        overwatch.info(f"Dataset Size: {len(train_dataset)} samples")
         
         if cfg.use_lora and hasattr(vlm, 'lora_applied') and vlm.lora_applied:
             try:
@@ -356,8 +421,44 @@ def pretrain(cfg: PretrainConfig) -> None:
             except:
                 pass
 
-    # Run Training
-    overwatch.info("Starting Training Loop")
+    # 最終記憶體清理
+    if cfg.enable_memory_optimization:
+        torch.cuda.empty_cache()
+
+    # Run Training with memory optimization
+    overwatch.info("Starting Training Loop (Memory Optimized)")
+    
+    # 如果啟用記憶體優化，修改訓練策略
+    if cfg.enable_memory_optimization:
+        # 創建包裝的訓練策略來添加記憶體管理
+        original_run_training = train_strategy.run_training
+        
+        def memory_optimized_run_training(*args, **kwargs):
+            try:
+                return original_run_training(*args, **kwargs)
+            except torch.cuda.OutOfMemoryError as e:
+                overwatch.error(f"CUDA OOM Error: {e}")
+                overwatch.info("Attempting recovery with more aggressive memory management...")
+                
+                # 清理所有可能的記憶體
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+                
+                # 降低batch size並重試
+                original_batch_size = train_strategy.per_device_batch_size
+                train_strategy.per_device_batch_size = max(1, original_batch_size // 2)
+                train_strategy.grad_accumulation_steps *= 2
+                
+                overwatch.info(f"Reduced batch size to {train_strategy.per_device_batch_size}, increased accumulation to {train_strategy.grad_accumulation_steps}")
+                
+                # 重新設置優化器
+                train_strategy.run_setup(run_dir=run_dir, n_train_examples=len(train_dataset))
+                
+                # 再次嘗試
+                return original_run_training(*args, **kwargs)
+        
+        train_strategy.run_training = memory_optimized_run_training
+
     train_strategy.run_training(train_dataset, collator, metrics, stage=cfg.stage, seed=cfg.seed)
 
     # Save LoRA weights separately if using LoRA
@@ -372,6 +473,10 @@ def pretrain(cfg: PretrainConfig) -> None:
     # Finalize
     overwatch.info("Done with Training =>> Finalizing Metrics")
     metrics.finalize()
+
+    # 最終記憶體清理
+    if cfg.enable_memory_optimization:
+        torch.cuda.empty_cache()
 
     # And... we're done!
     overwatch.info("... and that's all, folks!")

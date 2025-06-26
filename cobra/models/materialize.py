@@ -54,6 +54,7 @@ VISION_BACKBONES = {
     
     # === New Fused BLIP2 Backbones ===
     "dinoblip2-vit-l-384px": {"cls": DinoBLIP2ViTBackbone, "kwargs": {"default_image_size": 384}},
+    "dinoblip2-vit-l-224px": {"cls": DinoBLIP2ViTBackbone, "kwargs": {"default_image_size": 224}},
 }
 
 

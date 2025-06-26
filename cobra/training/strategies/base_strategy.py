@@ -151,10 +151,16 @@ class TrainingStrategy(ABC):
             batch_size=self.per_device_batch_size,
             sampler=sampler,
             collate_fn=collator,
-            num_workers=num_workers,
-            worker_init_fn=self.worker_init_fn if num_workers > 0 else None,
-            pin_memory=torch.cuda.is_available(),
-            persistent_workers=num_workers > 0,
+            num_workers=0,                              # 改為 0
+            worker_init_fn=None,                        # 改為 None
+            pin_memory=False,                           # 改為 False
+            persistent_workers=False,                   # 添加這行
+            prefetch_factor=None,                       # 添加這行
+            #collate_fn=collator,
+            #num_workers=num_workers,
+            #worker_init_fn=self.worker_init_fn if num_workers > 0 else None,
+            #pin_memory=torch.cuda.is_available(),
+            #persistent_workers=num_workers > 0,
         )
 
         # Max Steps vs. Epochs Computation

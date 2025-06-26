@@ -48,7 +48,7 @@ class ModelConfig(ChoiceRegistry):
 
     # === Optional fields (with defaults) ===
     # LoRA Parameters (for LoRA training)
-    lora_rank: int = 16                                     # LoRA rank
+    lora_rank: int = 8                                     # LoRA rank
     lora_alpha: float = 32.0                                # LoRA alpha scaling
     lora_dropout: float = 0.1                               # LoRA dropout rate
 
@@ -59,8 +59,8 @@ class ModelConfig(ChoiceRegistry):
     # LoRA Finetune Stage Optimization Parameters
     lora_finetune_epochs: int = 1                           # Epochs for LoRA training
     lora_finetune_max_steps: Optional[int] = None           # Max steps for LoRA training
-    lora_finetune_global_batch_size: int = 64               # Global batch size for LoRA
-    lora_finetune_per_device_batch_size: int = 8            # Per-device batch size for LoRA
+    lora_finetune_global_batch_size: int = 4               # Global batch size for LoRA
+    lora_finetune_per_device_batch_size: int = 1            # Per-device batch size for LoRA
     lora_finetune_learning_rate: float = 1e-4               # Learning rate for LoRA training
     lora_finetune_weight_decay: float = 0.01                # Weight decay for LoRA training
     lora_finetune_max_grad_norm: float = 1.0                # Max grad norm for LoRA training
@@ -119,7 +119,7 @@ class Cobra_3B_LoRA(Cobra_3B):
     • LoRA 參數較激進 (rank 32, alpha 64)  
     """
     model_id: str = "cobra-lora+3b"
-
+    vision_backbone_id: str = "dinosiglip-vit-so-384px"
     # ---------- Align Stage (停用) ----------
     align_epochs: int = 0
     align_global_batch_size: int = 0
@@ -143,26 +143,79 @@ class Cobra_3B_LoRA(Cobra_3B):
     finetune_train_strategy: str = "fsdp-full-shard"
 
     # ---------- LoRA 參數 ----------
-    lora_rank: int = 32
-    lora_alpha: float = 64.0
+    lora_rank: int = 2
+    lora_alpha: float = 4.0
     lora_dropout: float = 0.05
 
     # ---------- LoRA Finetune Stage ----------
-    lora_finetune_epochs: int = 3
-    lora_finetune_global_batch_size: int = 8     # 4090 單卡建議值
-    lora_finetune_per_device_batch_size: int = 2
+    lora_finetune_epochs: int = 1
+    lora_finetune_global_batch_size: int = 1     # 4090 單卡建議值
+    lora_finetune_per_device_batch_size: int = 1
     lora_finetune_learning_rate: float = 2e-4
     lora_finetune_weight_decay: float = 0.01
     lora_finetune_max_grad_norm: float = 1.0
     lora_finetune_lr_scheduler_type: str = "linear-warmup+cosine-decay"
     lora_finetune_warmup_ratio: float = 0.05       # 稍微拉長 warm-up
-    lora_finetune_train_strategy: str = "fsdp-shard-grad-op"
+    lora_finetune_train_strategy: str = "single-gpu"
 
     # ---------- 其餘設定 ----------
     enable_gradient_checkpointing: bool = True
     enable_mixed_precision_training: bool = True   # 使用 AMP(bfloat16/FP16)
     reduce_in_full_precision: bool = False         # 如需 FP32 reduce 可改 True
 # New Cobra 3B with DinoBLIP2
+class Cobra_3B_LoRA_Emergency(Cobra_3B):
+    """緊急記憶體優化版本"""
+    model_id: str = "cobra-lora-emergency+3b"
+    
+    # 改用更小的vision backbone
+    vision_backbone_id: str = "siglip-vit-so400m"  # 單一backbone而不是fused
+    # 或者使用: "clip-vit-l"  # 更小的選擇
+    
+    # 降低解析度
+    image_resize_strategy: str = "resize-naive"
+    llm_max_length: int = 128  # 大幅縮短序列長度
+    
+    # 停用所有非必要訓練
+    align_epochs: int = 0
+    align_global_batch_size: int = 0
+    align_per_device_batch_size: int = 0
+    align_learning_rate: float = 0.0
+    align_weight_decay: float = 0.0
+    align_max_grad_norm: float = 0.0
+    align_lr_scheduler_type: str = "linear-warmup+cosine-decay"
+    align_warmup_ratio: float = 0.0
+    align_train_strategy: str = "single-gpu"  # 強制單GPU
+    
+    finetune_epochs: int = 0
+    finetune_global_batch_size: int = 0
+    finetune_per_device_batch_size: int = 0
+    finetune_learning_rate: float = 0.0
+    finetune_weight_decay: float = 0.0
+    finetune_max_grad_norm: float = 0.0
+    finetune_lr_scheduler_type: str = "linear-warmup+cosine-decay"
+    finetune_warmup_ratio: float = 0.0
+    finetune_train_strategy: str = "single-gpu"
+    
+    # 極度保守的LoRA設置
+    lora_rank: int = 2  # 最小可能的rank
+    lora_alpha: float = 4.0  # 對應降低
+    lora_dropout: float = 0.1
+    
+    # LoRA訓練設置
+    lora_finetune_epochs: int = 1
+    lora_finetune_global_batch_size: int = 1  # 最小batch
+    lora_finetune_per_device_batch_size: int = 1
+    lora_finetune_learning_rate: float = 1e-4
+    lora_finetune_weight_decay: float = 0.01
+    lora_finetune_max_grad_norm: float = 0.5  # 降低
+    lora_finetune_lr_scheduler_type: str = "linear-warmup+cosine-decay"
+    lora_finetune_warmup_ratio: float = 0.1
+    lora_finetune_train_strategy: str = "single-gpu"
+    
+    # 所有優化都啟用
+    enable_gradient_checkpointing: bool = True
+    enable_mixed_precision_training: bool = True
+    reduce_in_full_precision: bool = False
 @dataclass
 class Cobra_3B_BLIP2(ModelConfig):
     model_id: str = "cobra-blip2+3b"
@@ -337,6 +390,7 @@ class ModelRegistry(Enum):
     COBRA_BLIP2_PURE_3B = Cobra_3B_BLIP2_Pure
     COBRA_BLIP2_SIMPLE_3B = Cobra_3B_BLIP2_Simple
     COBRA_LORA_3B = Cobra_3B_LoRA
+    Cobra_LoRA_Emergency_3B = Cobra_3B_LoRA_Emergency
     @property
     def model_id(self) -> str:
         return self.value.model_id

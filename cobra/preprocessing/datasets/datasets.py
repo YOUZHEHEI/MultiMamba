@@ -1,22 +1,19 @@
 """
-datasets.py
+datasets.py - Modified to support subset loading
 
-PyTorch Dataset Definitions for Cobra models; supports processing for both the `align` and `finetune` stages, with
-utilities for formatting conversations during the `finetune` stage subject to the given LLM backbone's expected
-formatting (e.g., SYS_PROMPT + USER: ... ASSISTANT: ... for Vicuña v1.5 Chat models).
-
-We currently only support Map-style Datasets; assumes that all files (annotations, images) are on local disk, and that
-random access image reading is relatively cheap/fast.
+PyTorch Dataset Definitions for Cobra models with subset loading capability.
 """
 import copy
 import json
+import random
 from pathlib import Path
-from typing import Dict, List, Tuple, Type
+#from typing import Dict, List, Tuple, Type, Optional
 
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
 from transformers import PreTrainedTokenizerBase, GPTNeoXTokenizerFast
+from typing import Dict, List, Tuple, Type, Optional, Union
 
 from cobra.models.backbones.llm.prompting import PromptBuilder
 from cobra.models.backbones.vision import ImageTransform
@@ -32,18 +29,48 @@ class AlignDataset(Dataset[Dict[str, torch.Tensor]]):
         image_dir: Path,
         image_transform: ImageTransform,
         tokenizer: PreTrainedTokenizerBase,
+        max_samples: Optional[Union[int, float]] = None,  # 修改：支援整數或百分比
+        seed: int = 42,  # 新增：隨機種子
     ) -> None:
         super().__init__()
         self.chat_json, self.image_dir = chat_json, image_dir
         self.image_transform, self.tokenizer = image_transform, tokenizer
         self.dataset_type = "align"
+        self.max_samples = max_samples
+        self.seed = seed
 
         # Create Prompt Template
         self.prompt_template = "{caption}" + self.tokenizer.eos_token
 
         # Load Chat JSON
         with open(self.chat_json, "r") as f:
-            self.examples = json.load(f)
+            all_examples = json.load(f)
+        
+        # 處理 max_samples（支援整數或百分比）
+        if max_samples is not None:
+            if isinstance(max_samples, float):
+                # 百分比模式 (0.0-1.0)
+                if 0.0 < max_samples <= 1.0:
+                    actual_samples = int(len(all_examples) * max_samples)
+                    random.seed(seed)
+                    self.examples = random.sample(all_examples, actual_samples)
+                    print(f"[AlignDataset] Loaded {max_samples*100:.1f}% subset: {len(self.examples)}/{len(all_examples)} samples")
+                else:
+                    raise ValueError(f"Percentage max_samples must be between 0.0 and 1.0, got {max_samples}")
+            elif isinstance(max_samples, int):
+                # 絕對數量模式
+                if max_samples < len(all_examples):
+                    random.seed(seed)
+                    self.examples = random.sample(all_examples, max_samples)
+                    print(f"[AlignDataset] Loaded subset: {len(self.examples)}/{len(all_examples)} samples")
+                else:
+                    self.examples = all_examples
+                    print(f"[AlignDataset] max_samples ({max_samples}) >= dataset size, using full dataset: {len(self.examples)} samples")
+            else:
+                raise ValueError(f"max_samples must be int or float, got {type(max_samples)}")
+        else:
+            self.examples = all_examples
+            print(f"[AlignDataset] Loaded full dataset: {len(self.examples)} samples")
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         """
@@ -111,16 +138,46 @@ class FinetuneDataset(Dataset[Dict[str, torch.Tensor]]):
         image_transform: ImageTransform,
         tokenizer: PreTrainedTokenizerBase,
         prompt_builder_fn: Type[PromptBuilder],
+        max_samples: Optional[Union[int, float]] = None,  # 修改：支援整數或百分比
+        seed: int = 42,  # 新增：隨機種子
     ) -> None:
         super().__init__()
         self.instruct_json, self.image_dir = instruct_json, image_dir
         self.image_transform, self.tokenizer = image_transform, tokenizer
         self.prompt_builder_fn = prompt_builder_fn
         self.dataset_type = "finetune"
+        self.max_samples = max_samples
+        self.seed = seed
 
         # Load Instruct JSON
         with open(self.instruct_json, "r") as f:
-            self.examples = json.load(f)
+            all_examples = json.load(f)
+        
+        # 處理 max_samples（支援整數或百分比）
+        if max_samples is not None:
+            if isinstance(max_samples, float):
+                # 百分比模式 (0.0-1.0)
+                if 0.0 < max_samples <= 1.0:
+                    actual_samples = int(len(all_examples) * max_samples)
+                    random.seed(seed)
+                    self.examples = random.sample(all_examples, actual_samples)
+                    print(f"[FinetuneDataset] Loaded {max_samples*100:.1f}% subset: {len(self.examples)}/{len(all_examples)} samples")
+                else:
+                    raise ValueError(f"Percentage max_samples must be between 0.0 and 1.0, got {max_samples}")
+            elif isinstance(max_samples, int):
+                # 絕對數量模式
+                if max_samples < len(all_examples):
+                    random.seed(seed)
+                    self.examples = random.sample(all_examples, max_samples)
+                    print(f"[FinetuneDataset] Loaded subset: {len(self.examples)}/{len(all_examples)} samples")
+                else:
+                    self.examples = all_examples
+                    print(f"[FinetuneDataset] max_samples ({max_samples}) >= dataset size, using full dataset: {len(self.examples)} samples")
+            else:
+                raise ValueError(f"max_samples must be int or float, got {type(max_samples)}")
+        else:
+            self.examples = all_examples
+            print(f"[FinetuneDataset] Loaded full dataset: {len(self.examples)} samples")
 
     # === Unimodal + Multimodal Handling ===
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
