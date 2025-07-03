@@ -349,7 +349,7 @@ class MultiDirectionalSpatialScanner(nn.Module):
                 x_unscanned = self._unscan_direction_3(x_processed, height, width)
             
             # Flatten back to sequence format
-            direction_outputs.append(x_unscanned.view(batch_size, num_patches, embed_dim))
+            direction_outputs.append(x_unscanned.reshape(batch_size, num_patches, embed_dim))
         
         # Weighted fusion of direction outputs
         fused_output = torch.zeros_like(vision_features)
