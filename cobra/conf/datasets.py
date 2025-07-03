@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Tuple
 
 from draccus import ChoiceRegistry
-
+#from .refcoco_datasets import RefCOCOConfig, RefCOCOPlusConfig, RefCOCOgConfig
 
 @dataclass
 class DatasetConfig(ChoiceRegistry):
@@ -108,7 +108,95 @@ class LLaVa_LVIS4V_LRV_Config(DatasetConfig):
     )
     dataset_root_dir: Path = Path("data")
 
+@dataclass  
+class RefCOCOConfig(DatasetConfig):
+    dataset_id: str = "refcoco"
+    
+    align_stage_components: Tuple[Path, Path] = (
+        Path("refcoco/refcoco.json"),
+        Path("refcoco/images/"),
+    )
+    finetune_stage_components: Tuple[Path, Path] = (
+        Path("refcoco/refcoco.json"),
+        Path("refcoco/images/"),
+    )
+    dataset_root_dir: Path = Path("data")
+    
+    # RefCOCO specific settings
+    task_type: str = "bbox"
+    add_spatial_tokens: bool = True
+    enable_spatial_reasoning: bool = True
+    spatial_reasoning_config: dict = None
+    
+    def __post_init__(self):
+        if self.spatial_reasoning_config is None:
+            self.spatial_reasoning_config = {
+                "d_state": 16,
+                "d_conv": 4,
+                "expand": 2,
+                "dropout": 0.1,
+                "num_directions": 4,
+            }
 
+
+@dataclass
+class RefCOCOPlusConfig(DatasetConfig):
+    dataset_id: str = "refcoco+"
+    
+    align_stage_components: Tuple[Path, Path] = (
+        Path("refcoco+/refcoco+.json"),
+        Path("refcoco+/images/"),
+    )
+    finetune_stage_components: Tuple[Path, Path] = (
+        Path("refcoco+/refcoco+.json"),
+        Path("refcoco+/images/"),
+    )
+    dataset_root_dir: Path = Path("data")
+    
+    task_type: str = "bbox"
+    add_spatial_tokens: bool = True
+    enable_spatial_reasoning: bool = True
+    spatial_reasoning_config: dict = None
+    
+    def __post_init__(self):
+        if self.spatial_reasoning_config is None:
+            self.spatial_reasoning_config = {
+                "d_state": 16,
+                "d_conv": 4,
+                "expand": 2,
+                "dropout": 0.1,
+                "num_directions": 4,
+            }
+
+
+@dataclass
+class RefCOCOgConfig(DatasetConfig):
+    dataset_id: str = "refcocog"
+    
+    align_stage_components: Tuple[Path, Path] = (
+        Path("refcocog/refcocog.json"),
+        Path("refcocog/images/"),
+    )
+    finetune_stage_components: Tuple[Path, Path] = (
+        Path("refcocog/refcocog.json"),
+        Path("refcocog/images/"),
+    )
+    dataset_root_dir: Path = Path("data")
+    
+    task_type: str = "bbox"
+    add_spatial_tokens: bool = True
+    enable_spatial_reasoning: bool = True
+    spatial_reasoning_config: dict = None
+    
+    def __post_init__(self):
+        if self.spatial_reasoning_config is None:
+            self.spatial_reasoning_config = {
+                "d_state": 16,
+                "d_conv": 4,
+                "expand": 2,
+                "dropout": 0.1,
+                "num_directions": 4,
+            }
 # === Define a Dataset Registry Enum for Reference & Validation =>> all *new* datasets must be added here! ===
 @unique
 class DatasetRegistry(Enum):
@@ -122,6 +210,9 @@ class DatasetRegistry(Enum):
 
     LLAVA_LVIS4V_LRV = LLaVa_LVIS4V_LRV_Config
 
+    REFCOCO = RefCOCOConfig
+    REFCOCO_PLUS = RefCOCOPlusConfig
+    REFCOCOG = RefCOCOgConfig
     @property
     def dataset_id(self) -> str:
         return self.value.dataset_id
@@ -130,3 +221,7 @@ class DatasetRegistry(Enum):
 # Register Datasets in Choice Registry
 for dataset_variant in DatasetRegistry:
     DatasetConfig.register_subclass(dataset_variant.dataset_id, dataset_variant.value)
+
+DatasetConfig.register_subclass("refcoco", RefCOCOConfig)
+DatasetConfig.register_subclass("refcoco+", RefCOCOPlusConfig)
+DatasetConfig.register_subclass("refcocog", RefCOCOgConfig)

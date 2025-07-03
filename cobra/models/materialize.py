@@ -119,8 +119,25 @@ def get_vlm(
     lora_alpha: float = 32.0,
     lora_dropout: float = 0.1,
     lora_target_modules: Optional[list] = None,
+    # Spatial reasoning parameters
+    enable_spatial_reasoning: bool = False,
+    spatial_reasoning_config: Optional[dict] = None,
 ):
-    """Create VLM with optional LoRA support."""
+    '''Create VLM with optional LoRA and spatial reasoning support.'''
+    
+    # Check if spatial reasoning is requested
+    if enable_spatial_reasoning or "spatial" in arch_specifier:
+        return create_spatial_cobra_vlm(
+            model_id=model_id,
+            vision_backbone=vision_backbone,
+            llm_backbone=llm_backbone,
+            arch_specifier=arch_specifier,
+            enable_mixed_precision_training=enable_mixed_precision_training,
+            enable_spatial_reasoning=True,
+            spatial_reasoning_config=spatial_reasoning_config,
+        )
+    
+    # Original VLM creation logic
     if use_lora:
         return CobraLoRAVLM(
             model_id,

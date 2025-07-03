@@ -20,9 +20,14 @@ except ImportError:
     from cobra.preprocessing.datasets.datasets import AlignDataset, FinetuneDataset
 
 from cobra.util.data_utils import PaddedCollatorForLanguageModeling
-
+from cobra.preprocessing.datasets.refcoco_dataset import RefCOCODataset
 # Dataset Initializers =>> Maps Stage --> cls()
-DATASET_INITIALIZER = {"align": AlignDataset, "finetune": FinetuneDataset, "full-finetune": FinetuneDataset}
+DATASET_INITIALIZER = {
+    "align": AlignDataset, 
+    "finetune": FinetuneDataset, 
+    "full-finetune": FinetuneDataset,
+    "refcoco": RefCOCODataset,  # Add RefCOCO support
+}
 
 
 def get_dataset_and_collator(
@@ -46,7 +51,54 @@ def get_dataset_and_collator(
     import inspect
     dataset_init_signature = inspect.signature(dataset_cls.__init__)
     supports_max_samples = 'max_samples' in dataset_init_signature.parameters
-
+    if hasattr(dataset_cfg, 'dataset_id') and 'refcoco' in dataset_cfg.dataset_id:
+        from cobra.preprocessing.datasets.refcoco_dataset import RefCOCODataset
+        
+        dataset_root_dir = dataset_cfg.dataset_root_dir
+        annotation_json, image_dir = dataset_cfg.finetune_stage_components
+        
+        # 确定主要标注文件
+        annotation_path = dataset_root_dir / annotation_json
+        if not annotation_path.exists():
+            # 尝试其他可能的文件名
+            possible_names = [
+                f"refs({dataset_cfg.dataset_id}).json",
+                f"{dataset_cfg.dataset_id}.json",
+                "refcoco.json",
+                "refs.json"
+            ]
+            
+            for name in possible_names:
+                alt_path = dataset_root_dir / dataset_cfg.dataset_id / name
+                if alt_path.exists():
+                    annotation_path = alt_path
+                    break
+        
+        dataset = RefCOCODataset(
+            annotations_json=annotation_path,
+            images_dir=dataset_root_dir / image_dir,
+            image_transform=image_transform,
+            tokenizer=tokenizer,
+            prompt_builder_fn=prompt_builder_fn,
+            split="train",  # 默认使用train split
+            max_samples=max_samples,
+            seed=seed,
+            task_type=getattr(dataset_cfg, 'task_type', 'bbox'),
+            add_spatial_tokens=getattr(dataset_cfg, 'add_spatial_tokens', True),
+        )
+        
+        collator = PaddedCollatorForLanguageModeling(
+            tokenizer.model_max_length,
+            tokenizer.pad_token_id,
+            default_image_resolution,
+            padding_side=padding_side
+        )
+        
+        return dataset, collator
+    
+    # Original dataset creation logic for other datasets
+    dataset_cls = DATASET_INITIALIZER[stage]
+    # ... rest of original function
     # Switch on `stage`
     if stage == "align":
         annotation_json, image_dir = dataset_cfg.align_stage_components

@@ -6,7 +6,11 @@ from enum import Enum, unique
 from typing import Optional
 
 from draccus import ChoiceRegistry
-
+from .refcoco_models import (
+    CobraSpatialRefCOCOConfig, 
+    CobraSpatialRefCOCOLoRAConfig,
+    CobraSpatialRefCOCOLightConfig
+)
 
 @dataclass
 class ModelConfig(ChoiceRegistry):
@@ -391,6 +395,10 @@ class ModelRegistry(Enum):
     COBRA_BLIP2_SIMPLE_3B = Cobra_3B_BLIP2_Simple
     COBRA_LORA_3B = Cobra_3B_LoRA
     Cobra_LoRA_Emergency_3B = Cobra_3B_LoRA_Emergency
+
+    COBRA_SPATIAL_REFCOCO = CobraSpatialRefCOCOConfig
+    COBRA_SPATIAL_REFCOCO_LORA = CobraSpatialRefCOCOLoRAConfig  
+    COBRA_SPATIAL_REFCOCO_LIGHT = CobraSpatialRefCOCOLightConfig
     @property
     def model_id(self) -> str:
         return self.value.model_id
@@ -399,3 +407,6 @@ class ModelRegistry(Enum):
 # Register Models in Choice Registry
 for model_variant in ModelRegistry:
     ModelConfig.register_subclass(model_variant.model_id, model_variant.value)
+    ModelConfig.register_subclass("cobra-spatial-refcoco+3b", CobraSpatialRefCOCOConfig)
+    ModelConfig.register_subclass("cobra-spatial-refcoco-lora+3b", CobraSpatialRefCOCOLoRAConfig)
+    ModelConfig.register_subclass("cobra-spatial-refcoco-light+3b", CobraSpatialRefCOCOLightConfig)
