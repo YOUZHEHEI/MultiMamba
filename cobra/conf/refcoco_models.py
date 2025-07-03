@@ -1,34 +1,40 @@
 """
 cobra/conf/refcoco_models.py
 
-Model configurations specifically designed for RefCOCO training with spatial reasoning
+修復循環導入問題的RefCOCO模型配置
 """
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import Optional, Dict, Any
 
-from cobra.conf.models import ModelConfig
+# 避免循環導入 - 在需要時動態導入
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from cobra.conf.models import ModelConfig
 
 
-@dataclass
-class CobraSpatialRefCOCOConfig(ModelConfig):
-    """Cobra model with spatial reasoning for RefCOCO tasks"""
+@dataclass 
+class BaseRefCOCOConfig:
+    """RefCOCO基礎配置類，避免循環導入"""
     
+    # Model identification
     model_id: str = "cobra-spatial-refcoco+3b"
-    arch_specifier: str = "no-align+fused-gelu-mlp+spatial"
+    arch_specifier: str = "no-align+fused-gelu-mlp"
     
-    # Use DINOSigLIP for better spatial understanding
+    # Backbone configuration
     vision_backbone_id: str = "dinosiglip-vit-so-384px"
     llm_backbone_id: str = "mamba-2.8b-zephyr"
     
+    # Model parameters
     image_resize_strategy: str = "resize-naive"
-    llm_max_length: int = 1024  # Shorter for RefCOCO tasks
+    llm_max_length: int = 1024
     
-    # Spatial reasoning specific parameters
+    # Spatial reasoning configuration
     enable_spatial_reasoning: bool = True
-    spatial_reasoning_config: dict = None
+    spatial_reasoning_config: Optional[Dict[str, Any]] = None
     
-    # Align Stage (minimal for RefCOCO)
-    align_epochs: int = 0  # Skip align for RefCOCO
+    # Training stages - Align stage (skip for RefCOCO)
+    align_epochs: int = 0
     align_global_batch_size: int = 0
     align_per_device_batch_size: int = 0
     align_learning_rate: float = 0.0
@@ -38,23 +44,23 @@ class CobraSpatialRefCOCOConfig(ModelConfig):
     align_warmup_ratio: float = 0.0
     align_train_strategy: str = "single-gpu"
     
-    # Finetune Stage - optimized for RefCOCO
+    # Finetune stage
     finetune_epochs: int = 3
     finetune_global_batch_size: int = 16
     finetune_per_device_batch_size: int = 2
-    finetune_learning_rate: float = 1e-4  # Lower LR for stability
+    finetune_learning_rate: float = 1e-4
     finetune_weight_decay: float = 0.01
     finetune_max_grad_norm: float = 1.0
     finetune_lr_scheduler_type: str = "linear-warmup+cosine-decay"
-    finetune_warmup_ratio: float = 0.1  # More warmup for stability
+    finetune_warmup_ratio: float = 0.1
     finetune_train_strategy: str = "single-gpu"
     
-    # LoRA Configuration for efficient training
+    # LoRA configuration
     lora_rank: int = 16
     lora_alpha: float = 32.0
     lora_dropout: float = 0.1
     
-    # LoRA RefCOCO training
+    # LoRA training parameters
     lora_finetune_epochs: int = 5
     lora_finetune_global_batch_size: int = 8
     lora_finetune_per_device_batch_size: int = 1
@@ -79,59 +85,53 @@ class CobraSpatialRefCOCOConfig(ModelConfig):
 
 
 @dataclass
-class CobraSpatialRefCOCOLoRAConfig(CobraSpatialRefCOCOConfig):
-    """LoRA-only training configuration for RefCOCO"""
+class CobraSpatialRefCOCOConfig(BaseRefCOCOConfig):
+    """標準RefCOCO配置"""
+    model_id: str = "cobra-spatial-refcoco+3b"
+
+
+@dataclass
+class CobraSpatialRefCOCOLoRAConfig(BaseRefCOCOConfig):
+    """LoRA專用RefCOCO配置"""
     
     model_id: str = "cobra-spatial-refcoco-lora+3b"
     
-    # Skip standard training stages
+    # 跳過標準微調階段
     finetune_epochs: int = 0
     finetune_global_batch_size: int = 0
     finetune_per_device_batch_size: int = 0
     finetune_learning_rate: float = 0.0
-    finetune_weight_decay: float = 0.0
-    finetune_max_grad_norm: float = 0.0
-    finetune_warmup_ratio: float = 0.0
-    finetune_train_strategy: str = "single-gpu"
     
-    # Enhanced LoRA training for RefCOCO
-    lora_rank: int = 32  # Higher rank for spatial reasoning
+    # 增強LoRA訓練
+    lora_rank: int = 32
     lora_alpha: float = 64.0
     lora_dropout: float = 0.05
     
     lora_finetune_epochs: int = 8
     lora_finetune_global_batch_size: int = 16
     lora_finetune_per_device_batch_size: int = 2
-    lora_finetune_learning_rate: float = 3e-4  # Higher LR for LoRA-only
-    lora_finetune_weight_decay: float = 0.01
-    lora_finetune_max_grad_norm: float = 1.0
-    lora_finetune_lr_scheduler_type: str = "linear-warmup+cosine-decay"
-    lora_finetune_warmup_ratio: float = 0.1
-    lora_finetune_train_strategy: str = "single-gpu"
+    lora_finetune_learning_rate: float = 3e-4
 
 
 @dataclass
-class CobraSpatialRefCOCOLightConfig(CobraSpatialRefCOCOConfig):
-    """Lightweight configuration for limited GPU memory"""
+class CobraSpatialRefCOCOLightConfig(BaseRefCOCOConfig):
+    """輕量級RefCOCO配置"""
     
     model_id: str = "cobra-spatial-refcoco-light+3b"
     
-    # Use smaller vision backbone for memory efficiency
-    vision_backbone_id: str = "siglip-vit-so400m"  # Single backbone instead of fused
+    # 使用更小的視覺backbone
+    vision_backbone_id: str = "siglip-vit-so400m"
     
-    # Reduced sequence length
+    # 減少序列長度
     llm_max_length: int = 512
     
-    # Smaller spatial reasoning config
-    spatial_reasoning_config: dict = None
-    
-    # Memory-optimized training settings
+    # 記憶體優化訓練設置
     finetune_epochs: int = 2
     finetune_global_batch_size: int = 4
     finetune_per_device_batch_size: int = 1
     finetune_learning_rate: float = 5e-5
     
-    # Conservative LoRA settings
+    # 保守的LoRA設置
     lora_rank: int = 8
     lora_alpha: float = 16.0
     lora_dropout: float = 0.1
@@ -143,34 +143,54 @@ class CobraSpatialRefCOCOLightConfig(CobraSpatialRefCOCOConfig):
     
     def __post_init__(self):
         super().__post_init__()
-        # Override with lighter spatial config
+        # 使用更輕量的空間配置
         self.spatial_reasoning_config = {
             "d_state": 8,
             "d_conv": 3,
             "expand": 1,
             "dropout": 0.1,
-            "num_directions": 3,  # Fewer directions
+            "num_directions": 3,
             "use_bias": False,
         }
 
 
-# Add to ModelRegistry in models.py
-"""
-Update cobra/conf/models.py to include:
+# 動態創建ModelConfig子類以避免循環導入
+def create_model_configs():
+    """動態創建模型配置類以避免循環導入"""
+    try:
+        from cobra.conf.models import ModelConfig
+        
+        # 創建繼承ModelConfig的類
+        class CobraSpatialRefCOCOModelConfig(ModelConfig, CobraSpatialRefCOCOConfig):
+            pass
+        
+        class CobraSpatialRefCOCOLoRAModelConfig(ModelConfig, CobraSpatialRefCOCOLoRAConfig):
+            pass
+            
+        class CobraSpatialRefCOCOLightModelConfig(ModelConfig, CobraSpatialRefCOCOLightConfig):
+            pass
+        
+        return {
+            'standard': CobraSpatialRefCOCOModelConfig,
+            'lora': CobraSpatialRefCOCOLoRAModelConfig,
+            'light': CobraSpatialRefCOCOLightModelConfig,
+        }
+    except ImportError:
+        # 如果仍有循環導入問題，返回基礎配置
+        return {
+            'standard': CobraSpatialRefCOCOConfig,
+            'lora': CobraSpatialRefCOCOLoRAConfig,
+            'light': CobraSpatialRefCOCOLightConfig,
+        }
 
-from .refcoco_models import (
-    CobraSpatialRefCOCOConfig, 
-    CobraSpatialRefCOCOLoRAConfig,
-    CobraSpatialRefCOCOLightConfig
-)
 
-# Add to ModelRegistry enum:
-COBRA_SPATIAL_REFCOCO = CobraSpatialRefCOCOConfig
-COBRA_SPATIAL_REFCOCO_LORA = CobraSpatialRefCOCOLoRAConfig  
-COBRA_SPATIAL_REFCOCO_LIGHT = CobraSpatialRefCOCOLightConfig
+# 延遲初始化
+_model_configs = None
 
-# Register in choice registry:
-ModelConfig.register_subclass("cobra-spatial-refcoco+3b", CobraSpatialRefCOCOConfig)
-ModelConfig.register_subclass("cobra-spatial-refcoco-lora+3b", CobraSpatialRefCOCOLoRAConfig)
-ModelConfig.register_subclass("cobra-spatial-refcoco-light+3b", CobraSpatialRefCOCOLightConfig)
-"""
+def get_refcoco_config(config_type: str = 'lora'):
+    """獲取RefCOCO配置，避免循環導入"""
+    global _model_configs
+    if _model_configs is None:
+        _model_configs = create_model_configs()
+    
+    return _model_configs.get(config_type, _model_configs['lora'])
