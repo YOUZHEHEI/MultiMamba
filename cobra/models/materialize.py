@@ -107,6 +107,7 @@ def get_llm_backbone_and_tokenizer(
         raise ValueError(f"LLM Backbone `{llm_backbone_id}` is not supported!")
 
 
+# 在 get_vlm 函數中添加空間推理支援
 def get_vlm(
     model_id: str,
     arch_specifier: str,
@@ -123,22 +124,48 @@ def get_vlm(
     enable_spatial_reasoning: bool = False,
     spatial_reasoning_config: Optional[dict] = None,
 ):
-    '''Create VLM with optional LoRA and spatial reasoning support.'''
+    """創建VLM，支援LoRA和空間推理"""
     
-    # Check if spatial reasoning is requested
-    if enable_spatial_reasoning or "spatial" in arch_specifier:
-        return create_spatial_cobra_vlm(
-            model_id=model_id,
-            vision_backbone=vision_backbone,
-            llm_backbone=llm_backbone,
-            arch_specifier=arch_specifier,
-            enable_mixed_precision_training=enable_mixed_precision_training,
-            enable_spatial_reasoning=True,
-            spatial_reasoning_config=spatial_reasoning_config,
-        )
+    # 檢查是否需要空間推理
+    need_spatial = (
+        enable_spatial_reasoning or 
+        "spatial" in model_id.lower() or 
+        "refcoco" in model_id.lower() or
+        "spatial" in arch_specifier
+    )
     
-    # Original VLM creation logic
+    if need_spatial:
+        # 導入空間推理VLM
+        from cobra.models.vlms.cobra_spatial import CobraSpatialVLM, create_spatial_cobra_vlm
+        
+        if use_lora:
+            # 創建支援LoRA和空間推理的VLM
+            return create_spatial_lora_vlm(
+                model_id=model_id,
+                vision_backbone=vision_backbone,
+                llm_backbone=llm_backbone,
+                arch_specifier=arch_specifier,
+                enable_mixed_precision_training=enable_mixed_precision_training,
+                lora_rank=lora_rank,
+                lora_alpha=lora_alpha,
+                lora_dropout=lora_dropout,
+                lora_target_modules=lora_target_modules,
+                spatial_reasoning_config=spatial_reasoning_config,
+            )
+        else:
+            return create_spatial_cobra_vlm(
+                model_id=model_id,
+                vision_backbone=vision_backbone,
+                llm_backbone=llm_backbone,
+                arch_specifier=arch_specifier,
+                enable_mixed_precision_training=enable_mixed_precision_training,
+                enable_spatial_reasoning=True,
+                spatial_reasoning_config=spatial_reasoning_config,
+            )
+    
+    # 原有的VLM創建邏輯
     if use_lora:
+        from cobra.models.vlms.cobra_lora import CobraLoRAVLM
         return CobraLoRAVLM(
             model_id,
             vision_backbone,
@@ -151,6 +178,7 @@ def get_vlm(
             lora_target_modules=lora_target_modules,
         )
     else:
+        from cobra.models.vlms.cobra import CobraVLM
         return CobraVLM(
             model_id,
             vision_backbone,
@@ -158,3 +186,53 @@ def get_vlm(
             enable_mixed_precision_training=enable_mixed_precision_training,
             arch_specifier=arch_specifier,
         )
+
+
+def create_spatial_lora_vlm(
+    model_id: str,
+    vision_backbone: VisionBackbone,
+    llm_backbone: LLMBackbone,
+    arch_specifier: str = "gelu-mlp",
+    enable_mixed_precision_training: bool = True,
+    lora_rank: int = 16,
+    lora_alpha: float = 32.0,
+    lora_dropout: float = 0.1,
+    lora_target_modules: Optional[list] = None,
+    spatial_reasoning_config: Optional[dict] = None,
+):
+    """創建同時支援空間推理和LoRA的VLM"""
+    
+    from cobra.models.vlms.cobra_spatial import CobraSpatialVLM
+    from cobra.util.lora_utils import apply_lora_to_linear_layers
+    
+    # 創建空間推理VLM
+    vlm = CobraSpatialVLM(
+        model_id=model_id,
+        vision_backbone=vision_backbone,
+        llm_backbone=llm_backbone,
+        enable_mixed_precision_training=enable_mixed_precision_training,
+        arch_specifier=arch_specifier,
+        enable_spatial_reasoning=True,
+        spatial_config=spatial_reasoning_config,
+    )
+    
+    # 應用LoRA
+    if lora_target_modules is None:
+        lora_target_modules = ["mixer.in_proj", "mixer.out_proj", "mixer.x_proj", "mixer.dt_proj"]
+    
+    apply_lora_to_linear_layers(
+        vlm.llm_backbone,
+        target_modules=lora_target_modules,
+        rank=lora_rank,
+        alpha=lora_alpha,
+        dropout=lora_dropout,
+    )
+    
+    # 設置LoRA相關屬性
+    vlm.lora_applied = True
+    vlm.lora_rank = lora_rank
+    vlm.lora_alpha = lora_alpha
+    vlm.lora_dropout = lora_dropout
+    vlm.lora_target_modules = lora_target_modules
+    
+    return vlm

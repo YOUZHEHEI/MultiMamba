@@ -90,6 +90,7 @@ class FSDPStrategy(TrainingStrategy):
         self.fsdp_state_dict_type = state_dict_type
         self.fsdp_save_policy = FullStateDictConfig(offload_to_cpu=True, rank0_only=True)
 
+    # 在 FSDPStrategy 類中，save_checkpoint 方法的完整修改
     def save_checkpoint(
         self,
         run_dir: Path,
@@ -127,7 +128,15 @@ class FSDPStrategy(TrainingStrategy):
                 # Save Checkpoint & Copy Latest to `latest-checkpoint.pt`
                 torch.save({"model": model_state_dicts}, checkpoint_path)
                 shutil.copy(checkpoint_path, checkpoint_dir / "latest-checkpoint.pt")
-
+                
+                # === 新增的vlm-evaluation支援 ===
+                self._save_vlm_eval_config(run_dir)
+                
+                if hasattr(self.vlm, 'lora_applied') and self.vlm.lora_applied:
+                    self._save_integrated_lora_checkpoint(run_dir, model_state_dicts)
+                
+                if hasattr(self.vlm, 'spatial_scanner') or hasattr(self.vlm, 'spatial_feature_processor'):
+                    self._save_spatial_modules(run_dir)
     def run_setup(self, run_dir: Path, n_train_examples: int) -> None:
         # Iteratively Assemble FSDP Wrapping Policy by fetching the wrapping policies for each backbone/constituent
         vlm_fsdp_wrapping_policy = self.vlm.get_fsdp_wrapping_policy()

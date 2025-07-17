@@ -4,7 +4,6 @@ registry.py
 Exhaustive list of pretrained VLMs (with full descriptions / links to corresponding names and sections of paper).
 """
 
-
 # === Pretrained Model Registry ===
 # fmt: off
 MODEL_REGISTRY = {
@@ -61,6 +60,41 @@ MODEL_REGISTRY = {
         },
     },
 }
+
+# === 現在添加新的空間推理模型 ===
+MODEL_REGISTRY.update({
+    "cobra-refcoco-lora+3b": {
+        "model_id": "cobra-refcoco-lora+3b",
+        "names": ["Cobra RefCOCO LoRA 3B"],
+        "description": {
+            "name": "Cobra RefCOCO LoRA 3B",
+            "optimization_procedure": "spatial-lora-finetune",
+            "visual_representation": "DINOv2 ViT-L/14 + SigLIP ViT-SO/14 @ 384px",
+            "image_processing": "Multi-Directional Spatial Scanning + Naive Resize",
+            "language_model": "Mamba 2.8B Zephyr",
+            "datasets": ["RefCOCO", "RefCOCO+", "RefCOCOg"],
+            "spatial_reasoning": True,
+            "multi_directional_scan": True,
+            "lora_enabled": True,
+            "train_epochs": 8,
+        },
+    },
+    "cobra-spatial-refcoco+3b": {
+        "model_id": "cobra-spatial-refcoco+3b",
+        "names": ["Cobra Spatial RefCOCO 3B"],
+        "description": {
+            "name": "Cobra Spatial RefCOCO 3B",
+            "optimization_procedure": "spatial-finetune",
+            "visual_representation": "DINOv2 ViT-L/14 + SigLIP ViT-SO/14 @ 384px",
+            "image_processing": "Multi-Directional Spatial Scanning + Naive Resize",
+            "language_model": "Mamba 2.8B Zephyr",
+            "datasets": ["RefCOCO", "RefCOCO+", "RefCOCOg"],
+            "spatial_reasoning": True,
+            "multi_directional_scan": True,
+            "train_epochs": 5,
+        },
+    }
+})
 
 # Build Global Registry (Model ID, Name) -> Metadata
 GLOBAL_REGISTRY = {name: v for k, v in MODEL_REGISTRY.items() for name in [k] + v["names"]}

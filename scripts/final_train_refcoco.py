@@ -366,7 +366,7 @@ class FinalRefCOCOTrainConfig:
     
     # Memory optimization - 为全量训练优化
     gradient_accumulation_steps: int = 2  # 梯度累积
-    save_every_n_steps: int = 1000  # 每1000步保存一次
+    save_every_n_steps: int = 20000  # 每1000步保存一次
     eval_every_n_steps: int = 2000  # 每2000步评估一次
     
     # HF Hub

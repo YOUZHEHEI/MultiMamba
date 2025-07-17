@@ -22,6 +22,7 @@ overwatch = initialize_overwatch(__name__)
 
 
 class DDPStrategy(TrainingStrategy):
+   # 在 DDPStrategy 類中，save_checkpoint 方法的完整修改
     @overwatch.rank_zero_only()
     def save_checkpoint(
         self,
@@ -51,6 +52,15 @@ class DDPStrategy(TrainingStrategy):
         # Save Checkpoint & Copy Latest to `latest-checkpoint.pt`
         torch.save({"model": model_state_dicts, "optimizer": optimizer_state_dict}, checkpoint_path)
         shutil.copy(checkpoint_path, checkpoint_dir / "latest-checkpoint.pt")
+        
+        # === 新增的vlm-evaluation支援 ===
+        self._save_vlm_eval_config(run_dir)
+        
+        if hasattr(self.vlm, 'lora_applied') and self.vlm.lora_applied:
+            self._save_integrated_lora_checkpoint(run_dir, model_state_dicts)
+        
+        if hasattr(self.vlm, 'spatial_scanner') or hasattr(self.vlm, 'spatial_feature_processor'):
+            self._save_spatial_modules(run_dir)
 
     def run_setup(self, run_dir: Path, n_train_examples: int) -> None:
         # Gradient Checkpointing Setup
