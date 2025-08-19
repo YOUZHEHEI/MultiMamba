@@ -96,6 +96,26 @@ MODEL_REGISTRY.update({
     }
 })
 
+# Add MultiMamba variant emphasizing spatial reasoning and LoRA
+MODEL_REGISTRY.update({
+    "multimamba-spatial-lora+3b": {
+        "model_id": "multimamba-spatial-lora+3b",
+        "names": ["MultiMamba Spatial LoRA 3B"],
+        "description": {
+            "name": "MultiMamba Spatial LoRA 3B",
+            "optimization_procedure": "spatial-lora-finetune",
+            "visual_representation": "DINOv2 ViT-L/14 + SigLIP ViT-SO/14 @ 384px",
+            "image_processing": "Mamba Spatial Scanner (multi-directional)",
+            "language_model": "Mamba 2.8B Zephyr",
+            "datasets": ["RefCOCO", "RefCOCO+", "RefCOCOg"],
+            "spatial_reasoning": True,
+            "multi_directional_scan": True,
+            "lora_enabled": True,
+            "train_epochs": 6,
+        },
+    },
+})
+
 # Build Global Registry (Model ID, Name) -> Metadata
 GLOBAL_REGISTRY = {name: v for k, v in MODEL_REGISTRY.items() for name in [k] + v["names"]}
 

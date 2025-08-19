@@ -252,6 +252,7 @@ class SpatialModelRegistry(Enum):
     COBRA_SPATIAL_FULL_3B = Cobra_3B_Spatial_Full
     COBRA_REFCOCO_3B = Cobra_3B_RefCOCO_Only
     COBRA_SPATIAL_LORA_3B = Cobra_3B_Spatial_LoRA
+    # MultiMamba variant id only (reuse Cobra_3B_Spatial_LoRA config values)
     
     @property
     def model_id(self) -> str:
