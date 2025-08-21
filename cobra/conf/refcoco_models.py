@@ -154,6 +154,153 @@ class CobraSpatialRefCOCOLightConfig(BaseRefCOCOConfig):
         }
 
 
+# 在 cobra/conf/refcoco_models.py 中添加6方向配置类
+
+@dataclass
+class Cobra6DirRefCOCOLoRAConfig(BaseRefCOCOConfig):
+    """6方向RefCOCO LoRA配置"""
+    
+    model_id: str = "cobra-6dir-refcoco-lora+3b"
+    
+    # 空间推理配置
+    enable_spatial_reasoning: bool = True
+    spatial_reasoning_config: Optional[Dict[str, Any]] = None
+    num_scan_directions: int = 6  # 6个扫描方向
+    enable_semantic_alignment: bool = True  # 启用语义对齐
+    
+    # 跳过标准微调阶段
+    finetune_epochs: int = 0
+    finetune_global_batch_size: int = 0
+    finetune_per_device_batch_size: int = 0
+    finetune_learning_rate: float = 0.0
+    
+    # 增强LoRA训练配置
+    lora_rank: int = 32
+    lora_alpha: float = 64.0
+    lora_dropout: float = 0.05
+    lora_target_modules_str: str = "mixer.in_proj,mixer.out_proj,mixer.x_proj,mixer.dt_proj,spatial_scanner.direction_projections,spatial_scanner.fusion_layer"
+    
+    lora_finetune_epochs: int = 3
+    lora_finetune_global_batch_size: int = 8
+    lora_finetune_per_device_batch_size: int = 1
+    lora_finetune_learning_rate: float = 2e-4
+    lora_finetune_weight_decay: float = 0.01
+    lora_finetune_max_grad_norm: float = 1.0
+    lora_finetune_lr_scheduler_type: str = "linear-warmup+cosine-decay"
+    lora_finetune_warmup_ratio: float = 0.1
+    lora_finetune_train_strategy: str = "single-gpu"
+    
+    def __post_init__(self):
+        # 设置默认6方向空间推理配置
+        if self.spatial_reasoning_config is None:
+            self.spatial_reasoning_config = {
+                "d_state": 16,
+                "d_conv": 4,
+                "expand": 2,
+                "dropout": 0.1,
+                "num_directions": 6,  # 6个方向：left-right, right-left, up-down, down-up, transpose, transpose-reverse
+                "use_bias": False,
+                "enable_semantic_alignment": True,
+                "text_embed_dim": None,  # 将自动匹配LLM嵌入维度
+            }
+        
+        # 解析LoRA目标模块
+        super().__post_init__()
+
+
+@dataclass  
+class Cobra6DirRefCOCOConfig(BaseRefCOCOConfig):
+    """6方向RefCOCO完整训练配置"""
+    
+    model_id: str = "cobra-6dir-spatial-refcoco+3b"
+    
+    # 空间推理配置
+    enable_spatial_reasoning: bool = True
+    spatial_reasoning_config: Optional[Dict[str, Any]] = None
+    num_scan_directions: int = 6
+    enable_semantic_alignment: bool = True
+    
+    # 标准微调阶段
+    finetune_epochs: int = 2
+    finetune_global_batch_size: int = 8
+    finetune_per_device_batch_size: int = 1
+    finetune_learning_rate: float = 1e-4
+    
+    # LoRA微调阶段
+    lora_rank: int = 32
+    lora_alpha: float = 64.0
+    lora_dropout: float = 0.05
+    
+    lora_finetune_epochs: int = 3
+    lora_finetune_global_batch_size: int = 8
+    lora_finetune_per_device_batch_size: int = 1
+    lora_finetune_learning_rate: float = 2e-4
+    
+    def __post_init__(self):
+        # 设置6方向空间推理配置
+        if self.spatial_reasoning_config is None:
+            self.spatial_reasoning_config = {
+                "d_state": 16,
+                "d_conv": 4,
+                "expand": 2,
+                "dropout": 0.1,
+                "num_directions": 6,
+                "use_bias": False,
+                "enable_semantic_alignment": True,
+            }
+        
+        super().__post_init__()
+
+
+@dataclass
+class Cobra6DirRefCOCOLightConfig(BaseRefCOCOConfig):
+    """6方向RefCOCO轻量级配置"""
+    
+    model_id: str = "cobra-6dir-refcoco-light+3b"
+    
+    # 使用较小的视觉backbone
+    vision_backbone_id: str = "siglip-vit-so400m"
+    
+    # 空间推理配置（轻量级）
+    enable_spatial_reasoning: bool = True
+    spatial_reasoning_config: Optional[Dict[str, Any]] = None
+    num_scan_directions: int = 6
+    enable_semantic_alignment: bool = True
+    
+    # 减少序列长度
+    llm_max_length: int = 256
+    
+    # 内存优化训练设置
+    finetune_epochs: int = 1
+    finetune_global_batch_size: int = 4
+    finetune_per_device_batch_size: int = 1
+    finetune_learning_rate: float = 1e-4
+    
+    lora_rank: int = 16  # 更小的rank
+    lora_alpha: float = 32.0
+    lora_dropout: float = 0.1
+    
+    lora_finetune_epochs: int = 2
+    lora_finetune_global_batch_size: int = 4
+    lora_finetune_per_device_batch_size: int = 1
+    lora_finetune_learning_rate: float = 1e-4
+    
+    def __post_init__(self):
+        # 轻量级空间推理配置
+        if self.spatial_reasoning_config is None:
+            self.spatial_reasoning_config = {
+                "d_state": 8,  # 更小的状态维度
+                "d_conv": 3,
+                "expand": 1,  # 更小的扩展因子
+                "dropout": 0.1,
+                "num_directions": 6,
+                "use_bias": False,
+                "enable_semantic_alignment": True,
+            }
+        
+        super().__post_init__()
+
+
 # 動態創建ModelConfig子類以避免循環導入
 def create_model_configs():
     """動態創建模型配置類以避免循環導入"""

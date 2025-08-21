@@ -22,7 +22,10 @@ from cobra.training.materialize import get_train_strategy
 
 # Initialize Overwatch =>> Wraps `logging.Logger`
 overwatch = initialize_overwatch(__name__)
-
+# Memory optimization
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:32'
+torch.cuda.empty_cache()
 
 @dataclass
 class FixedRefCOCOTrainingConfig:
@@ -38,8 +41,8 @@ class FixedRefCOCOTrainingConfig:
     
     # 訓練超參數
     learning_rate: float = 3e-4
-    global_batch_size: int = 16
-    per_device_batch_size: int = 2
+    global_batch_size: int = 2
+    per_device_batch_size: int = 1
     gradient_accumulation_steps: int = 8
     num_epochs: int = 2
     

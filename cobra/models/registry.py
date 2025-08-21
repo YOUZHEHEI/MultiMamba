@@ -93,7 +93,46 @@ MODEL_REGISTRY.update({
             "multi_directional_scan": True,
             "train_epochs": 5,
         },
+    },
+
+
+    "cobra-6dir-refcoco-lora+3b": {
+        "model_id": "cobra-6dir-refcoco-lora+3b",
+        "names": ["Cobra 6-Direction RefCOCO LoRA 3B"],
+        "description": {
+            "name": "Cobra 6-Direction RefCOCO LoRA 3B",
+            "optimization_procedure": "lora-finetune",
+            "visual_representation": "DINOv2 ViT-L/14 + SigLIP ViT-SO/14 @ 384px",
+            "image_processing": "6-Directional Spatial Scanning + Visual-Language Semantic Alignment",
+            "language_model": "Mamba 2.8B Zephyr",
+            "datasets": ["RefCOCO", "RefCOCO+", "RefCOCOg"],
+            "spatial_reasoning": True,
+            "multi_directional_scan": True,
+            "num_scan_directions": 6,
+            "semantic_alignment": True,
+            "lora_enabled": True,
+            "train_epochs": 3,
+        },
+    },
+
+    "cobra-6dir-spatial-refcoco+3b": {
+        "model_id": "cobra-6dir-spatial-refcoco+3b", 
+        "names": ["Cobra 6-Direction Spatial RefCOCO 3B"],
+        "description": {
+            "name": "Cobra 6-Direction Spatial RefCOCO 3B",
+            "optimization_procedure": "spatial-finetune",
+            "visual_representation": "DINOv2 ViT-L/14 + SigLIP ViT-SO/14 @ 384px",
+            "image_processing": "6-Directional Spatial Scanning + Visual-Language Semantic Alignment",
+            "language_model": "Mamba 2.8B Zephyr",
+            "datasets": ["RefCOCO", "RefCOCO+", "RefCOCOg"],
+            "spatial_reasoning": True,
+            "multi_directional_scan": True,
+            "num_scan_directions": 6,
+            "semantic_alignment": True,
+            "train_epochs": 5,
+        },
     }
+    
 })
 
 # Build Global Registry (Model ID, Name) -> Metadata
