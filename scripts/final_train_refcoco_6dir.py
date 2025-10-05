@@ -655,7 +655,7 @@ def create_6dir_vlm_safely(cfg, vision_backbone, llm_backbone):
         raise e
 
 
-def apply_6dir_lora_safely(vlm, cfg):
+def apply_6dir_lora_safely(vlm, cfg, device):
     """应用6方向LoRA（修复版本）"""
     if not cfg.use_lora:
         logger.info("跳过LoRA应用")
@@ -690,8 +690,9 @@ def apply_6dir_lora_safely(vlm, cfg):
             )
             
             # 计算可训练参数
+            vlm = vlm.cuda
             lora_params, total_params = count_lora_parameters(vlm.llm_backbone)
-            vlm = vlm.to(device)
+            
             logger.info(f"✅ LoRA应用成功 (内置工具)")
             logger.info(f"  LoRA层数: {len(lora_layers)}")
             logger.info(f"  总参数: {total_params:,}")
@@ -872,7 +873,7 @@ def train_6dir_refcoco(cfg: SixDirRefCOCOTrainConfig) -> None:
         vlm.train()
         
         # Apply LoRA
-        apply_6dir_lora_safely(vlm, cfg)
+        apply_6dir_lora_safely(vlm, cfg, device)
         
         # Create dataset
         train_dataset = RefCOCO6DirDataset(
