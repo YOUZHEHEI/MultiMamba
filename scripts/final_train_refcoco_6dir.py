@@ -691,7 +691,7 @@ def apply_6dir_lora_safely(vlm, cfg):
             
             # 计算可训练参数
             lora_params, total_params = count_lora_parameters(vlm.llm_backbone)
-            
+            vlm = vlm.to(device)
             logger.info(f"✅ LoRA应用成功 (内置工具)")
             logger.info(f"  LoRA层数: {len(lora_layers)}")
             logger.info(f"  总参数: {total_params:,}")
