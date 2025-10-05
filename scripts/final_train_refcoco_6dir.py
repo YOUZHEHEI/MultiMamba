@@ -475,7 +475,8 @@ def create_6dir_collate_fn(tokenizer, device):
 
 @dataclass
 class SixDirRefCOCOTrainConfig:
-    """6方向RefCOCO训练配置"""
+    """完整的6方向RefCOCO訓練配置"""
+    
     # Model configuration
     model_id: str = "cobra-6dir-refcoco-lora+3b"
     vision_backbone_id: str = "dinosiglip-vit-so-384px"
@@ -489,16 +490,16 @@ class SixDirRefCOCOTrainConfig:
     split: str = "train"
     use_real_data: bool = True
     
-    # Spatial reasoning configuration - 进一步减少以节省内存
+    # Spatial reasoning configuration - 完整6方向配置
     enable_spatial_reasoning: bool = True
-    num_scan_directions: int = 2  # 进一步减少到2个方向
-    enable_semantic_alignment: bool = False  # 暂时禁用语义对齐以节省内存
+    num_scan_directions: int = 6  # 完整的6個方向
+    enable_semantic_alignment: bool = True  # 啟用語義對齊
     
     # Training configuration
     stage: str = "lora-finetune"
     use_lora: bool = True
     
-    # LoRA configuration (针对6方向优化)
+    # LoRA configuration (針對6方向優化)
     lora_rank: int = 32
     lora_alpha: float = 64.0
     lora_dropout: float = 0.05
@@ -510,7 +511,7 @@ class SixDirRefCOCOTrainConfig:
     weight_decay: float = 0.01
     
     # Data loading
-    max_samples: int = -1  # -1 表示使用所有样本，避免 Optional[int] 解析问题
+    max_samples: int = -1  # -1 表示使用所有樣本
     subset_seed: int = 42
     image_resize_strategy: str = "resize-naive"
     llm_max_length: int = 512
@@ -521,25 +522,76 @@ class SixDirRefCOCOTrainConfig:
     run_root_dir: Path = Path("runs")
     seed: int = 7
     
-    # Memory optimization - 极端内存优化
-    gradient_accumulation_steps: int = 16  # 大幅增加梯度累积
-    save_every_n_steps: int = 10000
+    # Memory optimization - 針對6方向優化
+    gradient_accumulation_steps: int = 8  # 優化的梯度累積步數
+    save_every_n_steps: int = 5000  # 保存檢查點頻率
     eval_every_n_steps: int = 5000
-    clear_cache_every_n_steps: int = 5  # 更频繁清理缓存
+    clear_cache_every_n_steps: int = 10  # 清理緩存頻率
     enable_mixed_precision: bool = True
-    enable_gradient_checkpointing: bool = False  # 暂时禁用
+    enable_gradient_checkpointing: bool = True  # 啟用梯度檢查點節省內存
     
     # HF Hub
     hf_token: Union[str, Path] = Path(".hf_token")
     
     def __post_init__(self):
+        """後處理配置 - 設置運行ID和空間配置"""
+        # 設置運行ID
         if self.run_id is None:
             data_type = "real" if self.use_real_data else "virtual"
-            self.run_id = f"refcoco-6dir-{data_type}-{self.epochs}ep"
+            samples_str = f"{self.max_samples}s" if self.max_samples > 0 else "all"
+            self.run_id = f"refcoco-6dir-{data_type}-{samples_str}-{self.epochs}ep"
         
-        # 处理 max_samples: -1 表示使用所有样本
+        # 處理 max_samples: -1 表示使用所有樣本
         if self.max_samples == -1:
             self.max_samples = None
+        
+        # 創建6方向空間推理配置
+        self._create_spatial_config()
+        
+        # 打印配置摘要
+        logger.info("=" * 70)
+        logger.info(f"訓練配置摘要:")
+        logger.info(f"  模型ID: {self.model_id}")
+        logger.info(f"  掃描方向數: {self.num_scan_directions}")
+        logger.info(f"  語義對齊: {self.enable_semantic_alignment}")
+        logger.info(f"  使用LoRA: {self.use_lora} (rank={self.lora_rank}, alpha={self.lora_alpha})")
+        logger.info(f"  訓練輪數: {self.epochs}")
+        logger.info(f"  學習率: {self.learning_rate}")
+        logger.info(f"  批次大小: {self.per_device_batch_size}")
+        logger.info(f"  梯度累積: {self.gradient_accumulation_steps}")
+        logger.info(f"  混合精度: {self.enable_mixed_precision}")
+        logger.info(f"  運行ID: {self.run_id}")
+        logger.info("=" * 70)
+    
+    def _create_spatial_config(self):
+        """創建6方向空間推理配置字典"""
+        self.spatial_config = {
+            "d_state": 16,        # Mamba狀態維度
+            "d_conv": 4,          # 卷積核大小  
+            "expand": 2,          # 擴展因子
+            "dropout": 0.1,       # Dropout率
+            "num_directions": self.num_scan_directions,  # 使用配置的方向數
+            "use_bias": False,    # 不使用bias以節省內存
+        }
+        
+        logger.info("6方向空間推理配置:")
+        for key, value in self.spatial_config.items():
+            logger.info(f"  {key}: {value}")
+    
+    def get_spatial_config(self) -> Dict[str, Any]:
+        """獲取空間推理配置字典"""
+        if hasattr(self, 'spatial_config'):
+            return self.spatial_config
+        else:
+            # 如果還沒創建，現在創建
+            return {
+                "d_state": 16,
+                "d_conv": 4,
+                "expand": 2,
+                "dropout": 0.1,
+                "num_directions": self.num_scan_directions,
+                "use_bias": False,
+            }
 
 
 def load_6dir_models_safely(cfg):

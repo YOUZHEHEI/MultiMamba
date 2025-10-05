@@ -38,6 +38,19 @@ MAMBA_MODELS = {
     "mamba-2.8b-zephyr": {
         "llm_family": "mamba", "llm_cls": MambaForCausalLM, "hf_hub_path": "xiuyul/mamba-2.8b-zephyr"
     },
+
+    #  Mamba-8B
+    "mamba-7b-rw": {
+        "llm_family": "mamba", "llm_cls": MambaForCausalLM, "hf_hub_path": "TRI-ML/mamba-7b-rw"
+    },
+    
+    "falcon-mamba-7b": {
+        "llm_family": "mamba", "llm_cls": MambaForCausalLM, "hf_hub_path": "tiiuae/falcon-mamba-7b"
+    },
+    
+    "mamba2-2.7b": {
+        "llm_family": "mamba", "llm_cls": MambaForCausalLM, "hf_hub_path": "state-spaces/mamba2-2.7b"
+    },
 }
 
 

@@ -330,6 +330,47 @@ def create_model_configs():
             'light': CobraSpatialRefCOCOLightConfig,
         }
 
+@dataclass
+class Cobra6DirRefCOCO8BLoRAConfig(BaseRefCOCOConfig):
+    """6方向RefCOCO LoRA配置 - Mamba 8B版本"""
+    
+    model_id: str = "cobra-6dir-refcoco-lora+8b"
+    llm_backbone_id: str = "mamba-8b"  # 👈 使用 Mamba-8B
+    
+    # 空間推理配置
+    enable_spatial_reasoning: bool = True
+    num_scan_directions: int = 6
+    enable_semantic_alignment: bool = True
+    
+    # LoRA配置 - 8B模型優化
+    lora_rank: int = 64
+    lora_alpha: float = 128.0
+    lora_dropout: float = 0.05
+    lora_target_modules_str: str = "mixer.in_proj,mixer.out_proj,mixer.x_proj,mixer.dt_proj,spatial_scanner.direction_projections,spatial_scanner.fusion_layer"
+    
+    # 訓練配置
+    lora_finetune_epochs: int = 3
+    lora_finetune_global_batch_size: int = 8
+    lora_finetune_per_device_batch_size: int = 1
+    lora_finetune_learning_rate: float = 1e-4
+    lora_finetune_weight_decay: float = 0.01
+    
+    # 記憶體優化
+    gradient_accumulation_steps: int = 32
+    enable_gradient_checkpointing: bool = True
+    
+    def __post_init__(self):
+        if self.spatial_reasoning_config is None:
+            self.spatial_reasoning_config = {
+                "d_state": 16,
+                "d_conv": 4,
+                "expand": 2,
+                "dropout": 0.1,
+                "num_directions": 6,
+                "use_bias": False,
+                "enable_semantic_alignment": True,
+            }
+        super().__post_init__()
 
 # 延遲初始化
 _model_configs = None

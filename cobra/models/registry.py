@@ -59,6 +59,25 @@ MODEL_REGISTRY = {
             "train_epochs": 2,
         },
     },
+
+    "cobra-6dir-refcoco-lora+8b": {
+    "model_id": "cobra-6dir-refcoco-lora+8b",
+    "names": ["Cobra 6-Direction RefCOCO LoRA 8B"],
+    "description": {
+        "name": "Cobra 6-Direction RefCOCO LoRA 8B",
+        "optimization_procedure": "lora-finetune",
+        "visual_representation": "DINOv2 ViT-L/14 + SigLIP ViT-SO/14 @ 384px",
+        "image_processing": "6-Directional Spatial Scanning + Visual-Language Semantic Alignment",
+        "language_model": "Mamba 8B",  # 👈 注意這裡
+        "datasets": ["RefCOCO", "RefCOCO+", "RefCOCOg"],
+        "spatial_reasoning": True,
+        "multi_directional_scan": True,
+        "num_scan_directions": 6,
+        "semantic_alignment": True,
+        "lora_enabled": True,
+        "train_epochs": 3,
+        },
+    },
 }
 
 # === 現在添加新的空間推理模型 ===

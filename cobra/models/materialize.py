@@ -64,6 +64,9 @@ LLM_BACKBONES = {
     "mamba-2.8b-slimpj": {"cls": MambaLLMBackbone, "kwargs": {}},
     "mamba-2.8b": {"cls": MambaLLMBackbone, "kwargs": {}},
     "mamba-2.8b-zephyr": {"cls": MambaLLMBackbone, "kwargs": {}},
+    "mamba-7b-rw": {"cls": MambaLLMBackbone, "kwargs": {}},  # 👈 新增
+    "falcon-mamba-7b": {"cls": MambaLLMBackbone, "kwargs": {}},  # 👈 新增
+    "mamba2-2.7b": {"cls": MambaLLMBackbone, "kwargs": {}},
 }
 
 # fmt: on

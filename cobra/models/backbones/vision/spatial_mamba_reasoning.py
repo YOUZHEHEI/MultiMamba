@@ -1,8 +1,8 @@
 """
 cobra/models/backbones/vision/spatial_mamba_reasoning.py
 
-Modified for 6-directional spatial scanning: left-right, right-left, up-down, down-up, transpose, transpose-reverse
-Following the architecture shown in the image with Visual-Language Semantic Alignment
+完整的6方向空間掃描實現
+6個方向: left-right, right-left, up-down, down-up, transpose, transpose-reverse
 """
 import math
 import torch
@@ -127,7 +127,7 @@ class SpatialMambaBlock(nn.Module):
 
 class VisualLanguageSemanticAlignment(nn.Module):
     """
-    Visual-Language Semantic Alignment module as shown in the architecture
+    Visual-Language Semantic Alignment module
     """
     def __init__(self, embed_dim: int, text_embed_dim: int = None, dropout: float = 0.1):
         super().__init__()
@@ -150,8 +150,8 @@ class VisualLanguageSemanticAlignment(nn.Module):
             self.text_proj = nn.Linear(text_embed_dim, embed_dim)
         else:
             self.text_proj = nn.Identity()
-            
-        # Normalization layers - 使用动态维度
+        
+        # Normalization layers
         self.norm_visual = nn.LayerNorm(embed_dim)
         self.norm_text = nn.LayerNorm(embed_dim)
         self.norm_output = nn.LayerNorm(embed_dim)
@@ -164,53 +164,28 @@ class VisualLanguageSemanticAlignment(nn.Module):
             nn.Linear(embed_dim * 4, embed_dim),
             nn.Dropout(dropout)
         )
-        
-    def forward(self, visual_features: torch.Tensor, text_features: Optional[torch.Tensor] = None) -> torch.Tensor:
+    
+    def forward(
+        self, 
+        visual_features: torch.Tensor, 
+        text_features: Optional[torch.Tensor] = None
+    ) -> torch.Tensor:
         """
         Args:
             visual_features: [batch, num_patches, embed_dim]
-            text_features: [batch, seq_len, text_embed_dim] (optional)
+            text_features: [batch, seq_len, text_embed_dim] or None
         Returns:
             aligned_features: [batch, num_patches, embed_dim]
         """
-        # 检查并动态调整 LayerNorm 的维度
-        actual_embed_dim = visual_features.shape[-1]
-        if actual_embed_dim != self.embed_dim:
-            # 重新初始化 LayerNorm 层以匹配实际维度
-            self.embed_dim = actual_embed_dim
-            self.norm_visual = nn.LayerNorm(actual_embed_dim).to(visual_features.device)
-            self.norm_output = nn.LayerNorm(actual_embed_dim).to(visual_features.device)
-            
-            # 重新初始化 FFN
-            self.ffn = nn.Sequential(
-                nn.Linear(actual_embed_dim, actual_embed_dim * 4),
-                nn.GELU(),
-                nn.Dropout(0.1),
-                nn.Linear(actual_embed_dim * 4, actual_embed_dim),
-                nn.Dropout(0.1)
-            ).to(visual_features.device)
-            
-            # 重新初始化注意力层
-            self.cross_attention = nn.MultiheadAttention(
-                embed_dim=actual_embed_dim,
-                num_heads=8,
-                dropout=0.1,
-                batch_first=True
-            ).to(visual_features.device)
-        
         # Normalize visual features
         visual_norm = self.norm_visual(visual_features)
         
         if text_features is not None:
-            # Project text features to visual dimension
+            # Project text features
             text_proj = self.text_proj(text_features)
-            
-            # 动态调整 text norm 层
-            if text_proj.shape[-1] != self.embed_dim:
-                self.norm_text = nn.LayerNorm(text_proj.shape[-1]).to(text_proj.device)
             text_norm = self.norm_text(text_proj)
             
-            # Cross-modal attention: visual attends to text
+            # Cross-attention: visual queries attend to text
             try:
                 aligned_visual, _ = self.cross_attention(
                     query=visual_norm,
@@ -218,7 +193,7 @@ class VisualLanguageSemanticAlignment(nn.Module):
                     value=text_norm
                 )
             except:
-                # 如果注意力失败，跳过交叉注意力
+                # If attention fails, skip cross-attention
                 aligned_visual = visual_norm
             
             # Residual connection
@@ -233,7 +208,7 @@ class VisualLanguageSemanticAlignment(nn.Module):
                 )
                 aligned_visual = visual_features + aligned_visual
             except:
-                # 如果注意力失败，直接使用原始特征
+                # If attention fails, use original features
                 aligned_visual = visual_features
         
         # Normalize and apply FFN
@@ -242,23 +217,23 @@ class VisualLanguageSemanticAlignment(nn.Module):
             ffn_output = self.ffn(norm_output)
             return aligned_visual + ffn_output
         except:
-            # 如果 FFN 失败，直接返回对齐的特征
+            # If FFN fails, return aligned features
             return aligned_visual
 
 
 class MultiDirectionalSpatialScanner(nn.Module):
     """
-    6-directional spatial scanning module using Mamba
-    Supports: left-right, right-left, up-down, down-up, transpose, transpose-reverse
+    完整的6方向空間掃描模塊
+    支持: left-right, right-left, up-down, down-up, transpose, transpose-reverse
     """
     def __init__(
         self,
         embed_dim: int,
-        d_state: int = 4,  # 进一步减少状态维度
-        d_conv: int = 3,   # 保持卷积核大小
-        expand: int = 1,   # 保持扩展因子
+        d_state: int = 16,
+        d_conv: int = 4,
+        expand: int = 2,
         dropout: float = 0.1,
-        num_directions: int = 2,  # 减少到2个方向：left-right, up-down
+        num_directions: int = 6,  # 完整的6個方向
         use_bias: bool = False,
         text_embed_dim: int = None,
     ):
@@ -269,10 +244,11 @@ class MultiDirectionalSpatialScanner(nn.Module):
         # Input normalization
         self.norm_input = nn.LayerNorm(embed_dim)
         
-        # Visual-Language Semantic Alignment - 延迟初始化
+        # Visual-Language Semantic Alignment
         self.semantic_alignment = None
+        self.text_embed_dim = text_embed_dim
         
-        # Mamba blocks for each scanning direction (6 directions)
+        # Mamba blocks for each scanning direction (完整6個方向)
         self.mamba_blocks = nn.ModuleList([
             SpatialMambaBlock(
                 d_model=embed_dim,
@@ -284,13 +260,13 @@ class MultiDirectionalSpatialScanner(nn.Module):
             ) for _ in range(num_directions)
         ])
         
-        # Direction-specific projections
+        # Direction-specific projections (完整6個方向)
         self.direction_projections = nn.ModuleList([
             nn.Linear(embed_dim, embed_dim, bias=use_bias) 
             for _ in range(num_directions)
         ])
         
-        # Fusion layer
+        # Fusion layer (輸入維度 = embed_dim * 6)
         self.fusion_layer = nn.Sequential(
             nn.Linear(embed_dim * num_directions, embed_dim * 2, bias=use_bias),
             nn.SiLU(),
@@ -301,14 +277,11 @@ class MultiDirectionalSpatialScanner(nn.Module):
         # Output normalization
         self.norm_output = nn.LayerNorm(embed_dim)
         
-        # Learnable direction weights
+        # Learnable direction weights (6個權重)
         self.direction_weights = nn.Parameter(torch.ones(num_directions) / num_directions)
         
         # Spatial position embeddings
         self.register_buffer("pos_embed_cache", None)
-        
-        # 存储文本嵌入维度以便后续初始化
-        self.text_embed_dim = text_embed_dim
         
     def _create_position_embeddings(self, height: int, width: int, device: torch.device) -> torch.Tensor:
         """Create 2D position embeddings"""
@@ -322,8 +295,8 @@ class MultiDirectionalSpatialScanner(nn.Module):
         pos_w = torch.arange(width, device=device).float()
         
         # Normalize positions
-        pos_h = pos_h / (height - 1) * 2 - 1
-        pos_w = pos_w / (width - 1) * 2 - 1
+        pos_h = pos_h / max(height - 1, 1) * 2 - 1
+        pos_w = pos_w / max(width - 1, 1) * 2 - 1
         
         # Create meshgrid
         grid_h, grid_w = torch.meshgrid(pos_h, pos_w, indexing='ij')
@@ -348,68 +321,73 @@ class MultiDirectionalSpatialScanner(nn.Module):
             
         return pos_embed
     
+    # ========== 6個掃描方向函數 ==========
+    
     def _scan_direction_0(self, x_2d: torch.Tensor) -> torch.Tensor:
-        """Left-to-right scanning"""
+        """Direction 0: Left-to-right scanning (row-wise)"""
         return x_2d.flatten(1, 2)  # [batch, height*width, embed_dim]
     
     def _scan_direction_1(self, x_2d: torch.Tensor) -> torch.Tensor:
-        """Right-to-left scanning"""
+        """Direction 1: Right-to-left scanning"""
         x_flipped = torch.flip(x_2d, dims=[2])  # Flip width dimension
         return x_flipped.flatten(1, 2)
     
     def _scan_direction_2(self, x_2d: torch.Tensor) -> torch.Tensor:
-        """Up-to-down scanning (column-wise)"""
+        """Direction 2: Up-to-down scanning (column-wise)"""
         x_transposed = x_2d.transpose(1, 2)  # [batch, width, height, embed_dim]
         return x_transposed.flatten(1, 2)
     
     def _scan_direction_3(self, x_2d: torch.Tensor) -> torch.Tensor:
-        """Down-to-up scanning"""
+        """Direction 3: Down-to-up scanning"""
         x_transposed = x_2d.transpose(1, 2)  # [batch, width, height, embed_dim]
         x_flipped = torch.flip(x_transposed, dims=[2])  # Flip height dimension
         return x_flipped.flatten(1, 2)
     
     def _scan_direction_4(self, x_2d: torch.Tensor) -> torch.Tensor:
-        """Transpose scanning"""
+        """Direction 4: Diagonal transpose scanning"""
         x_transposed = x_2d.permute(0, 2, 1, 3)  # [batch, width, height, embed_dim]
         return x_transposed.flatten(1, 2)
     
     def _scan_direction_5(self, x_2d: torch.Tensor) -> torch.Tensor:
-        """Transpose-reverse scanning"""
+        """Direction 5: Diagonal transpose-reverse scanning"""
         x_transposed = x_2d.permute(0, 2, 1, 3)  # [batch, width, height, embed_dim]
         x_flipped = torch.flip(x_transposed, dims=[1, 2])  # Flip both dimensions
         return x_flipped.flatten(1, 2)
     
+    # ========== 6個反掃描方向函數 ==========
+    
     def _unscan_direction_0(self, x_scanned: torch.Tensor, height: int, width: int) -> torch.Tensor:
-        """Reverse left-to-right scanning"""
+        """Reverse Direction 0: Left-to-right scanning"""
         return x_scanned.view(-1, height, width, self.embed_dim)
     
     def _unscan_direction_1(self, x_scanned: torch.Tensor, height: int, width: int) -> torch.Tensor:
-        """Reverse right-to-left scanning"""
+        """Reverse Direction 1: Right-to-left scanning"""
         x_2d = x_scanned.view(-1, height, width, self.embed_dim)
         return torch.flip(x_2d, dims=[2])
     
     def _unscan_direction_2(self, x_scanned: torch.Tensor, height: int, width: int) -> torch.Tensor:
-        """Reverse up-to-down scanning"""
+        """Reverse Direction 2: Up-to-down scanning"""
         x_2d = x_scanned.view(-1, width, height, self.embed_dim)
         return x_2d.transpose(1, 2)
     
     def _unscan_direction_3(self, x_scanned: torch.Tensor, height: int, width: int) -> torch.Tensor:
-        """Reverse down-to-up scanning"""
+        """Reverse Direction 3: Down-to-up scanning"""
         x_2d = x_scanned.view(-1, width, height, self.embed_dim)
         x_unflipped = torch.flip(x_2d, dims=[2])
         return x_unflipped.transpose(1, 2)
     
     def _unscan_direction_4(self, x_scanned: torch.Tensor, height: int, width: int) -> torch.Tensor:
-        """Reverse transpose scanning"""
+        """Reverse Direction 4: Diagonal transpose scanning"""
         x_2d = x_scanned.view(-1, width, height, self.embed_dim)
         return x_2d.permute(0, 2, 1, 3)
     
     def _unscan_direction_5(self, x_scanned: torch.Tensor, height: int, width: int) -> torch.Tensor:
-        """Reverse transpose-reverse scanning"""
+        """Reverse Direction 5: Diagonal transpose-reverse scanning"""
         x_2d = x_scanned.view(-1, width, height, self.embed_dim)
         x_unflipped = torch.flip(x_2d, dims=[1, 2])
         return x_unflipped.permute(0, 2, 1, 3)
     
+
     def forward(
         self, 
         vision_features: torch.Tensor, 
@@ -418,59 +396,79 @@ class MultiDirectionalSpatialScanner(nn.Module):
         text_features: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         """
-        Args:
-            vision_features: [batch, num_patches, embed_dim]
-            height, width: Spatial dimensions
-            text_features: Optional text features [batch, seq_len, text_embed_dim]
-        Returns:
-            Dictionary with enhanced features and attention maps
+        完整的6方向空間掃描前向傳播
         """
         batch_size, num_patches, embed_dim = vision_features.shape
         assert num_patches == height * width, f"Mismatch: {num_patches} != {height * width}"
         
-        # 动态初始化语义对齐模块
-        if self.semantic_alignment is None:
-            actual_embed_dim = vision_features.shape[-1]
+        # ========== 動態初始化：確保所有模塊維度一致 ==========
+        need_reinit = (
+            self.semantic_alignment is None or 
+            not hasattr(self, '_initialized_embed_dim') or 
+            self._initialized_embed_dim != embed_dim
+        )
+        
+        if need_reinit:
+            print(f"[DEBUG] 動態初始化空間掃描器，embed_dim: {embed_dim}")
+            
+            # 記錄實際的 embed_dim
+            self._initialized_embed_dim = embed_dim
+            self.embed_dim = embed_dim
+            
+            # 1. 初始化語義對齊模塊
             self.semantic_alignment = VisualLanguageSemanticAlignment(
-                embed_dim=actual_embed_dim,
-                text_embed_dim=self.text_embed_dim,
+                embed_dim=embed_dim,
+                text_embed_dim=self.text_embed_dim or embed_dim,
                 dropout=0.1
             ).to(vision_features.device)
             
-            # 更新所有相关模块的维度
-            if actual_embed_dim != self.embed_dim:
-                self.embed_dim = actual_embed_dim
-                # 重新初始化输入/输出规范化层
-                self.norm_input = nn.LayerNorm(actual_embed_dim).to(vision_features.device)
-                self.norm_output = nn.LayerNorm(actual_embed_dim).to(vision_features.device)
-                
-                # 重新初始化方向投影层
-                self.direction_projections = nn.ModuleList([
-                    nn.Linear(actual_embed_dim, actual_embed_dim, bias=False).to(vision_features.device)
-                    for _ in range(self.num_directions)
-                ])
-                
-                # 重新初始化融合层
-                self.fusion_layer = nn.Sequential(
-                    nn.Linear(actual_embed_dim * self.num_directions, actual_embed_dim * 2, bias=False),
-                    nn.SiLU(),
-                    nn.Dropout(0.1),
-                    nn.Linear(actual_embed_dim * 2, actual_embed_dim, bias=False),
-                ).to(vision_features.device)
-                
-                # 重新初始化 Mamba 块 - 使用极简配置
-                self.mamba_blocks = nn.ModuleList([
-                    SpatialMambaBlock(
-                        d_model=actual_embed_dim,
-                        d_state=4,  # 进一步减少
-                        d_conv=3,   
-                        expand=1,   
-                        dropout=0.1,
-                        use_bias=False,
-                    ).to(vision_features.device) for _ in range(min(self.num_directions, 2))  # 最多2个方向
-                ])
+            # 2. 重新初始化輸入/輸出規範化層
+            self.norm_input = nn.LayerNorm(embed_dim).to(vision_features.device)
+            self.norm_output = nn.LayerNorm(embed_dim).to(vision_features.device)
+            
+            # 3. 重新初始化方向投影層（6個方向）
+            self.direction_projections = nn.ModuleList([
+                nn.Linear(embed_dim, embed_dim, bias=False).to(vision_features.device)
+                for _ in range(self.num_directions)
+            ])
+            
+            # 4. 重新初始化融合層（輸入 = embed_dim * 6）
+            self.fusion_layer = nn.Sequential(
+                nn.Linear(embed_dim * self.num_directions, embed_dim * 2, bias=False),
+                nn.SiLU(),
+                nn.Dropout(0.1),
+                nn.Linear(embed_dim * 2, embed_dim, bias=False),
+            ).to(vision_features.device)
+            
+            # 5. 重新初始化 Mamba 塊（6個方向）
+            d_state = getattr(self, 'd_state', 4)
+            d_conv = getattr(self, 'd_conv', 3)
+            expand = getattr(self, 'expand', 1)
+            
+            self.mamba_blocks = nn.ModuleList([
+                SpatialMambaBlock(
+                    d_model=embed_dim,
+                    d_state=d_state,
+                    d_conv=d_conv,
+                    expand=expand,
+                    dropout=0.1,
+                    use_bias=False,
+                ).to(vision_features.device) for _ in range(self.num_directions)
+            ])
+            
+            # 6. 重新初始化方向權重
+            self.direction_weights = nn.Parameter(
+                torch.ones(self.num_directions, device=vision_features.device) / self.num_directions
+            )
+            
+            print(f"[DEBUG] 初始化完成:")
+            print(f"  - norm_input: LayerNorm({embed_dim})")
+            print(f"  - fusion_layer input: {embed_dim * self.num_directions}")
+            print(f"  - num_directions: {self.num_directions}")
         
-        # Apply Visual-Language Semantic Alignment first
+        # ========== 正常的前向傳播 ==========
+        
+        # Apply Visual-Language Semantic Alignment
         aligned_features = self.semantic_alignment(vision_features, text_features)
         
         # Input normalization
@@ -483,16 +481,31 @@ class MultiDirectionalSpatialScanner(nn.Module):
         # Reshape to 2D spatial format
         x_2d = x.view(batch_size, height, width, embed_dim)
         
-        # Multi-directional scanning (2 directions only)
+        # ========== 完整的6方向掃描 ==========
         direction_outputs = []
+        
+        # 定義所有6個掃描函數
         scan_functions = [
-            self._scan_direction_0, self._scan_direction_2  # 只保留 left-right 和 up-down
-        ]
-        unscan_functions = [
-            self._unscan_direction_0, self._unscan_direction_2
+            self._scan_direction_0,  # left-right
+            self._scan_direction_1,  # right-left
+            self._scan_direction_2,  # up-down
+            self._scan_direction_3,  # down-up
+            self._scan_direction_4,  # transpose
+            self._scan_direction_5,  # transpose-reverse
         ]
         
-        for direction_idx in range(min(self.num_directions, 2)):  # 最多2个方向
+        # 定義所有6個反掃描函數
+        unscan_functions = [
+            self._unscan_direction_0,
+            self._unscan_direction_1,
+            self._unscan_direction_2,
+            self._unscan_direction_3,
+            self._unscan_direction_4,
+            self._unscan_direction_5,
+        ]
+        
+        # 處理所有6個方向
+        for direction_idx in range(self.num_directions):
             # Apply direction-specific scanning
             x_scanned = scan_functions[direction_idx](x_2d)
             
@@ -513,9 +526,11 @@ class MultiDirectionalSpatialScanner(nn.Module):
         for i, output in enumerate(direction_outputs):
             fused_output += self.direction_weights[i] * output
         
-        # Concatenate and project all directions
-        concatenated = torch.cat(direction_outputs, dim=-1)  # [batch, num_patches, embed_dim * 6]
-        projected = self.fusion_layer(concatenated)  # [batch, num_patches, embed_dim]
+        # Concatenate all 6 directions: [batch, num_patches, embed_dim * 6]
+        concatenated = torch.cat(direction_outputs, dim=-1)
+        
+        # Project through fusion layer: [batch, num_patches, embed_dim]
+        projected = self.fusion_layer(concatenated)
         
         # Combine weighted and projected outputs
         enhanced_features = 0.7 * projected + 0.3 * fused_output
@@ -547,21 +562,21 @@ def get_default_spatial_config(model_size="base"):
             "d_conv": 3,
             "expand": 1,
             "dropout": 0.1,
-            "num_directions": 6,  # Changed to 6
+            "num_directions": 6,
         },
         "base": {
             "d_state": 16,
             "d_conv": 4,
             "expand": 2,
             "dropout": 0.1,
-            "num_directions": 6,  # Changed to 6
+            "num_directions": 6,
         },
         "large": {
             "d_state": 32,
             "d_conv": 4,
             "expand": 2,
             "dropout": 0.05,
-            "num_directions": 6,  # Changed to 6
+            "num_directions": 6,
         }
     }
     return configs.get(model_size, configs["base"])
@@ -571,7 +586,6 @@ def get_default_spatial_config(model_size="base"):
 class RefCOCOSpatialProcessor(nn.Module):
     """
     Specialized processor for RefCOCO spatial features
-    Converts bounding box information to spatial embeddings
     """
     def __init__(self, spatial_dim=74, embed_dim=512):
         super().__init__()
@@ -597,10 +611,6 @@ class RefCOCOSpatialProcessor(nn.Module):
     def forward(self, spatial_features, bbox_coords=None):
         """
         Process spatial features for enhanced spatial reasoning
-        
-        Args:
-            spatial_features: [batch, spatial_dim] from RefCOCO dataset
-            bbox_coords: [batch, 4] normalized bbox coordinates (optional)
         """
         # Encode spatial features
         spatial_emb = self.spatial_encoder(spatial_features)
