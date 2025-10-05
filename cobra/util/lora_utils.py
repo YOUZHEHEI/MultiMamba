@@ -63,7 +63,7 @@ class LoRALinear(nn.Module):
         self.merge_weights = merge_weights
         self.merged = False
 
-         # 直接暴露原始层的关键属性，保持与nn.Linear的兼容性
+        # 直接暴露原始层的关键属性，保持与nn.Linear的兼容性
         self.weight = base_layer.weight
         self.bias = base_layer.bias
         self.in_features = base_layer.in_features
@@ -81,6 +81,12 @@ class LoRALinear(nn.Module):
             alpha=alpha,
             dropout=dropout,
         )
+        
+        # **FIX: Move LoRA parameters to the same device and dtype as base layer**
+        device = base_layer.weight.device
+        dtype = base_layer.weight.dtype
+        self.lora = self.lora.to(device=device, dtype=dtype)
+    
     def device(self):
         """返回设备信息"""
         return self.base_layer.weight.device
@@ -89,48 +95,14 @@ class LoRALinear(nn.Module):
     def dtype(self):
         """返回数据类型"""
         return self.base_layer.weight.dtype
-        
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass through base layer + LoRA adaptation."""
-        base_output = self.base_layer(x)
-        
-        if self.merged:
-            return base_output
-        else:
-            lora_output = self.lora(x)
-            return base_output + lora_output
     
-    def merge_weights(self):
-        """Merge LoRA weights into base layer for inference."""
-        if not self.merged:
-            # Compute LoRA weight delta
-            lora_weight = self.lora.lora_B @ self.lora.lora_A * self.lora.scaling
-            
-            # Add to base layer weight
-            self.base_layer.weight.data += lora_weight
-            self.merged = True
-    
-    def unmerge_weights(self):
-        """Unmerge LoRA weights from base layer."""
-        if self.merged:
-            # Compute LoRA weight delta
-            lora_weight = self.lora.lora_B @ self.lora.lora_A * self.lora.scaling
-            
-            # Subtract from base layer weight
-            self.base_layer.weight.data -= lora_weight
-            self.merged = False
-    
-    def __getattr__(self, name):
-        """代理其他属性访问到原始层，确保完全兼容"""
-        # 这些属性已经在__init__中设置，不应该走到这里
-        if name in ['base_layer', 'lora', 'merge_weights', 'merged', 'weight', 'bias', 'in_features', 'out_features']:
-            return super().__getattr__(name)
+    def _apply(self, fn):
+        """Override _apply to ensure LoRA params follow device/dtype changes"""
+        super()._apply(fn)
+        # Explicitly apply fn to LoRA submodule
+        self.lora = self.lora._apply(fn)
+        return self
         
-        # 对于其他属性，尝试从原始层获取
-        try:
-            return getattr(self.base_layer, name)
-        except AttributeError:
-            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")    
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass through base layer + LoRA adaptation."""
         base_output = self.base_layer(x)
@@ -230,8 +202,8 @@ def save_lora_weights(model: nn.Module, path: str):
             full_name = f"{prefix}.{name}" if prefix else name
             
             if isinstance(child, LoRALinear):
-                lora_state_dict[f"{full_name}.lora_A"] = child.lora.lora_A
-                lora_state_dict[f"{full_name}.lora_B"] = child.lora.lora_B
+                lora_state_dict[f"{full_name}.lora.lora_A"] = child.lora.lora_A.data.cpu()
+                lora_state_dict[f"{full_name}.lora.lora_B"] = child.lora.lora_B.data.cpu()
             else:
                 collect_lora_state_dict(child, full_name)
     
@@ -239,7 +211,7 @@ def save_lora_weights(model: nn.Module, path: str):
     torch.save(lora_state_dict, path)
 
 
-def load_lora_weights(model: nn.Module, path: str):
+def load_lora_weights(model: nn.Module, path: str, device: str = "cuda"):
     """Load LoRA weights."""
     lora_state_dict = torch.load(path, map_location="cpu")
     
@@ -248,13 +220,13 @@ def load_lora_weights(model: nn.Module, path: str):
             full_name = f"{prefix}.{name}" if prefix else name
             
             if isinstance(child, LoRALinear):
-                lora_a_key = f"{full_name}.lora_A"
-                lora_b_key = f"{full_name}.lora_B"
+                lora_a_key = f"{full_name}.lora.lora_A"
+                lora_b_key = f"{full_name}.lora.lora_B"
                 
                 if lora_a_key in lora_state_dict:
-                    child.lora.lora_A.data = lora_state_dict[lora_a_key]
+                    child.lora.lora_A.data = lora_state_dict[lora_a_key].to(device)
                 if lora_b_key in lora_state_dict:
-                    child.lora.lora_B.data = lora_state_dict[lora_b_key]
+                    child.lora.lora_B.data = lora_state_dict[lora_b_key].to(device)
             else:
                 load_lora_state_dict(child, full_name)
     
