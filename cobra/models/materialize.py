@@ -140,20 +140,22 @@ def get_vlm(
     if need_spatial:
         # 導入空間推理VLM
         from cobra.models.vlms.cobra_spatial import CobraSpatialVLM, create_spatial_cobra_vlm
+        from cobra.models.vlms.multimamba import MultiMambaSpatialLoRAVLM
         
         if use_lora:
-            # 創建支援LoRA和空間推理的VLM
-            return create_spatial_lora_vlm(
+            # Use MultiMambaSpatialLoRAVLM for stronger spatial reasoning
+            return MultiMambaSpatialLoRAVLM(
                 model_id=model_id,
                 vision_backbone=vision_backbone,
                 llm_backbone=llm_backbone,
-                arch_specifier=arch_specifier,
                 enable_mixed_precision_training=enable_mixed_precision_training,
+                arch_specifier=arch_specifier,
+                enable_spatial_reasoning=True,
+                spatial_config=spatial_reasoning_config,
                 lora_rank=lora_rank,
                 lora_alpha=lora_alpha,
                 lora_dropout=lora_dropout,
                 lora_target_modules=lora_target_modules,
-                spatial_reasoning_config=spatial_reasoning_config,
             )
         else:
             return create_spatial_cobra_vlm(
